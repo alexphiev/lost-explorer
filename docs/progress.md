@@ -1,6 +1,6 @@
-# Progress — MVP step 1
+# Progress — MVP step 1 (+1.5)
 
-Branch: `step-1`
+Branches: `step-1` (done), `step-1.5` (current, PR → master)
 
 ## Definition of done
 - [x] Next.js 16 + React 19.2 + TypeScript + Tailwind, exact versions pinned
@@ -16,11 +16,21 @@ Branch: `step-1`
 - [x] Spawn at centre on the ground, invisible walls at map edges
 - [x] `npm run build` passes
 
+## Step 1.5 — visual pass (realistic but poetic)
+- [ ] Terrain colours: moisture/variety field, richer palette (meadow, golden grass, moss, forest floor, rock strata)
+- [ ] Vegetation: conifers + deciduous, per-instance colours, TSL wind sway, grass tufts + flowers in meadows, varied rocks
+- [ ] Player: nicer explorer model (hat, scarf, backpack), two-segment limbs, bob/lean/breathing
+- [ ] Sky + light: low golden sun, clouds, warm sun / cool sky hemisphere, AgX tone mapping
+- [ ] Atmosphere: TSL fog tinted by sun direction + valley mist (height fog)
+- [ ] Post: TSL RenderPipeline with soft bloom + vignette
+- [ ] Chromium smoke screenshots (WebGL fallback, several seeds) — script, not a test suite
+- [ ] `npm run build` passes, PR opened
+
 ## Current task
-None. Step 1 is done; do not start step 2 without the user.
+Step 1.5 visual pass.
 
 ## Next action
-Wait for user feedback on /play (feel, terrain steepness, camera).
+Terrain colours + atmosphere + post (main session); Player model delegated to builder.
 
 ## Blockers
 None.
