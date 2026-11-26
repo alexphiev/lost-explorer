@@ -1,7 +1,6 @@
 'use client'
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
-import * as THREE from 'three/webgpu'
 import { KeyboardControls } from '@react-three/drei'
 import { Physics } from '@react-three/rapier'
 import { createRenderer } from '@/game/render/renderer'
@@ -58,9 +57,6 @@ export default function Scene() {
         dpr={[1, 1.5]}
         shadows="percentage"
         camera={{ fov: 55, near: 0.1, far: 900 }}
-        onCreated={({ gl }) => {
-          gl.toneMapping = THREE.AgXToneMapping
-        }}
       >
         <color attach="background" args={[HAZE_COOL]} />
         <Atmosphere mistHeight={world.terrain.maxHeight * 0.15} />

@@ -24,8 +24,8 @@ function makeGeometries() {
     painted(new THREE.ConeGeometry(1.5, 3.4, 7), '#365f34', 5.6),
     painted(new THREE.ConeGeometry(0.9, 2.2, 6), '#3d6a38', 7.3),
   ])
+  const broadleafTrunk = painted(new THREE.CylinderGeometry(0.18, 0.3, 3, 5), '#7a6048', 1.5)
   const broadleaf = mergeGeometries([
-    painted(new THREE.CylinderGeometry(0.18, 0.3, 3, 5), '#c9b8a2', 1.5),
     painted(new THREE.IcosahedronGeometry(2.1, 0), '#ffffff', 4.3),
     painted(new THREE.IcosahedronGeometry(1.5, 0), '#f2f2f2', 5.2, 1.0, 0.4),
     painted(new THREE.IcosahedronGeometry(1.3, 0), '#e8e8e8', 4.6, -1.1, -0.3),
@@ -49,7 +49,7 @@ function makeGeometries() {
     painted(new THREE.IcosahedronGeometry(0.08, 0), '#ffffff', 0.42),
   ])
   const rock = new THREE.DodecahedronGeometry(1, 0)
-  return { conifer, broadleaf, grass, flower, rock }
+  return { conifer, broadleafTrunk, broadleaf, grass, flower, rock }
 }
 
 const tmpM = new THREE.Matrix4()
@@ -93,6 +93,7 @@ export default function Vegetation({ data }: { data: VegetationData }) {
   const mats = useMemo(
     () => ({
       conifer: windMaterial(0.35, 8),
+      broadleafTrunk: windMaterial(0.45, 6),
       broadleaf: windMaterial(0.45, 6),
       grass: windMaterial(0.18, 0.6),
       flower: windMaterial(0.12, 0.45),
@@ -101,6 +102,7 @@ export default function Vegetation({ data }: { data: VegetationData }) {
     [],
   )
   const conifers = useRef<THREE.InstancedMesh>(null)
+  const broadleafTrunks = useRef<THREE.InstancedMesh>(null)
   const broadleaves = useRef<THREE.InstancedMesh>(null)
   const grass = useRef<THREE.InstancedMesh>(null)
   const flowers = useRef<THREE.InstancedMesh>(null)
@@ -108,6 +110,7 @@ export default function Vegetation({ data }: { data: VegetationData }) {
 
   useLayoutEffect(() => {
     fill(conifers.current, data.conifers, (it, c) => c.setHSL(0.08 + it.tint * 0.12, 0.25, 0.85 + it.tint * 0.25), undefined, 0.2)
+    fill(broadleafTrunks.current, data.broadleaves, (_it, c) => c.set('#ffffff'), undefined, 0.2)
     fill(broadleaves.current, data.broadleaves, (it, c) => {
       c.set(BROADLEAF[Math.floor(it.tint * BROADLEAF.length)])
     }, undefined, 0.2)
@@ -119,6 +122,7 @@ export default function Vegetation({ data }: { data: VegetationData }) {
   return (
     <>
       <instancedMesh ref={conifers} args={[geos.conifer, mats.conifer, data.conifers.length]} castShadow receiveShadow />
+      <instancedMesh ref={broadleafTrunks} args={[geos.broadleafTrunk, mats.broadleafTrunk, data.broadleaves.length]} castShadow receiveShadow />
       <instancedMesh ref={broadleaves} args={[geos.broadleaf, mats.broadleaf, data.broadleaves.length]} castShadow receiveShadow />
       <instancedMesh ref={grass} args={[geos.grass, mats.grass, data.grass.length]} receiveShadow />
       <instancedMesh ref={flowers} args={[geos.flower, mats.flower, data.flowers.length]} />

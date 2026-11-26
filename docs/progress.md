@@ -27,10 +27,10 @@ Branches: `step-1` (done), `step-1.5` (current, PR → master)
 - [x] `npm run build` passes, PR opened (step-1.5 → master, includes step 1)
 
 ## Current task
-None. Step 1.5 done, PR open. Do not start step 2 without the user.
+None. Step 1.5 done, PR #2 open and reviewed (fixes applied, rest in docs/ideas.md). Do not start step 2 without the user.
 
 ## Next action
-Wait for user review of the PR / feel in a real GPU browser (WebGPU path not seen headless).
+User review of PR #2 + check WebGPU on a real GPU browser, then step 2 (2D map prototype, tech doc §15).
 
 ## Blockers
 None.
@@ -53,3 +53,4 @@ None.
 - Player body locks X/Z rotation (enabledRotations) — it used to tip over on slopes.
 - Camera: camera-controls colliderMeshes had no effect; replaced by a per-frame clamp above heightAt() + lookAt; maxPolarAngle 0.5π.
 - Chromium checks: `scripts/smoke.cjs` (preinstalled Playwright, not a dependency or test suite) — 3 seeds, fails on page errors, saves screenshots. Only the WebGL fallback is checked headless.
+- PR review fixes: broadleaf trunks no longer tinted by leaf colour (separate trunk mesh), keyboard input ignored when the window loses focus, duplicate tone-mapping setup removed. Everything else deferred in docs/ideas.md.

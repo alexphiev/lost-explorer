@@ -104,12 +104,13 @@ export default function Player({ spawn, terrain }: { spawn: [number, number, num
     const e = ecctrl.current
     if (!e) return
     const k = getKeys()
-    input.forward = k.forward
-    input.backward = k.backward
-    input.leftward = k.leftward
-    input.rightward = k.rightward
-    input.jump = k.jump
-    input.run = k.run
+    const focused = document.hasFocus() // alt-tab with a key held must not keep the player running
+    input.forward = focused && k.forward
+    input.backward = focused && k.backward
+    input.leftward = focused && k.leftward
+    input.rightward = focused && k.rightward
+    input.jump = focused && k.jump
+    input.run = focused && k.run
     e.setMovement(input)
 
     const p = e.currPos
