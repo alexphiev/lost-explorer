@@ -4,11 +4,19 @@ import * as THREE from 'three/webgpu'
 import { CuboidCollider, HeightfieldCollider, RigidBody } from '@react-three/rapier'
 import type { Terrain as TerrainData } from '@/game/core/terrain'
 
-const MEADOW = new THREE.Color('#86a957')
-const FOREST = new THREE.Color('#4e7436')
-const ALPINE = new THREE.Color('#9aa36a')
-const ROCK = new THREE.Color('#7f776d')
-const ROCK_LIGHT = new THREE.Color('#a39d93')
+const DRY_GRASS = new THREE.Color('#c2b25f')
+const LUSH_GRASS = new THREE.Color('#77a24a')
+const MOSS = new THREE.Color('#4f7f3c')
+const FOREST_FLOOR = new THREE.Color('#4a6531')
+const ALPINE = new THREE.Color('#a7a571')
+const ROCK_WARM = new THREE.Color('#8f8273')
+const ROCK_COOL = new THREE.Color('#a29d94')
+const ROCK_DARK = new THREE.Color('#6b645c')
+
+const smooth = (a: number, b: number, v: number) => {
+  const t = Math.min(1, Math.max(0, (v - a) / (b - a)))
+  return t * t * (3 - 2 * t)
+}
 
 function buildGeometry(t: TerrainData) {
   const n = t.segments + 1
@@ -21,25 +29,37 @@ function buildGeometry(t: TerrainData) {
   const c = new THREE.Vector3()
   const ab = new THREE.Vector3()
   const ac = new THREE.Vector3()
+  const grass = new THREE.Color()
+  const rock = new THREE.Color()
   const color = new THREE.Color()
   let p = 0
 
   const vx = (ix: number, iz: number, out: THREE.Vector3) =>
     out.set(ix * cell - t.size / 2, t.heights[iz * n + ix], iz * cell - t.size / 2)
 
-  const pushTri = () => {
+  const pushTri = (moist: number) => {
     ab.subVectors(b, a)
     ac.subVectors(c, a)
     const normal = ab.cross(ac).normalize()
     const slope = 1 - Math.abs(normal.y)
-    const h = (a.y + b.y + c.y) / 3 / t.maxHeight
-    if (slope > 0.3) color.copy(h > 0.6 ? ROCK_LIGHT : ROCK)
-    else if (h > 0.72) color.copy(slope > 0.15 ? ROCK_LIGHT : ALPINE)
-    else if (h > 0.3) color.copy(FOREST)
-    else color.copy(MEADOW)
-    // deterministic small jitter for the low-poly look
-    const j = (Math.sin(a.x * 12.9898 + a.z * 78.233) * 43758.5453) % 1
-    color.offsetHSL(0, 0, j * 0.03)
+    const y = (a.y + b.y + c.y) / 3
+    const h = y / t.maxHeight
+    const hash = Math.abs((Math.sin(a.x * 12.9898 + a.z * 78.233) * 43758.5453) % 1)
+
+    // vegetation ground: dry golden → lush by moisture, moss in wet hollows,
+    // darker forest floor mid-slope, pale alpine grass up high
+    grass.copy(DRY_GRASS).lerp(LUSH_GRASS, smooth(0.25, 0.65, moist))
+    grass.lerp(MOSS, smooth(0.7, 0.95, moist) * (1 - smooth(0.2, 0.45, h)))
+    grass.lerp(FOREST_FLOOR, smooth(0.3, 0.5, h) * (1 - smooth(0.68, 0.8, h)) * (0.5 + 0.5 * moist))
+    grass.lerp(ALPINE, smooth(0.72, 0.88, h))
+
+    // rock: warm/cool strata bands, darker in steep faces
+    const band = 0.5 + 0.5 * Math.sin(y * 0.35 + Math.sin(a.x * 0.01) * 2)
+    rock.copy(ROCK_WARM).lerp(ROCK_COOL, band * 0.8).lerp(ROCK_DARK, smooth(0.5, 0.8, slope) * 0.6)
+
+    color.copy(grass).lerp(rock, smooth(0.22, 0.38, slope + (hash - 0.5) * 0.06))
+    color.offsetHSL((hash - 0.5) * 0.012, 0, (hash - 0.5) * 0.05)
+
     for (const v of [a, b, c]) {
       pos[p] = v.x
       pos[p + 1] = v.y
@@ -53,9 +73,10 @@ function buildGeometry(t: TerrainData) {
 
   for (let iz = 0; iz < t.segments; iz++) {
     for (let ix = 0; ix < t.segments; ix++) {
+      const moist = t.moisture[iz * n + ix]
       // counter-clockwise seen from above (+y)
-      vx(ix, iz, a); vx(ix, iz + 1, b); vx(ix + 1, iz, c); pushTri()
-      vx(ix + 1, iz, a); vx(ix, iz + 1, b); vx(ix + 1, iz + 1, c); pushTri()
+      vx(ix, iz, a); vx(ix, iz + 1, b); vx(ix + 1, iz, c); pushTri(moist)
+      vx(ix + 1, iz, a); vx(ix, iz + 1, b); vx(ix + 1, iz + 1, c); pushTri(moist)
     }
   }
 

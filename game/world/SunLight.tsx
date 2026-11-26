@@ -4,8 +4,9 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three/webgpu'
 import { runStore } from '@/game/state/run'
 
-export const SUN_DIRECTION = new THREE.Vector3(0.5, 0.8, 0.3).normalize()
-const DISTANCE = 120
+// Late-afternoon golden sun (~26° above the horizon)
+export const SUN_DIRECTION = new THREE.Vector3(0.72, 0.47, -0.55).normalize()
+const DISTANCE = 150
 
 /** Directional light whose shadow camera follows the player. */
 export default function SunLight() {
@@ -16,12 +17,12 @@ export default function SunLight() {
     if (!l) return
     l.shadow.mapSize.set(2048, 2048)
     const cam = l.shadow.camera
-    cam.left = -50
-    cam.right = 50
-    cam.top = 50
-    cam.bottom = -50
+    cam.left = -45
+    cam.right = 45
+    cam.top = 45
+    cam.bottom = -45
     cam.near = 1
-    cam.far = 300
+    cam.far = 400
     cam.updateProjectionMatrix()
   }, [])
 
@@ -34,5 +35,14 @@ export default function SunLight() {
     l.target.updateMatrixWorld()
   })
 
-  return <directionalLight ref={light} color="#fff4e0" intensity={2.2} castShadow shadow-bias={-0.0005} shadow-normalBias={0.05} />
+  return (
+    <directionalLight
+      ref={light}
+      color="#ffd29a"
+      intensity={2.8}
+      castShadow
+      shadow-bias={-0.0004}
+      shadow-normalBias={0.06}
+    />
+  )
 }

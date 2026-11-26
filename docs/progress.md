@@ -17,20 +17,20 @@ Branches: `step-1` (done), `step-1.5` (current, PR → master)
 - [x] `npm run build` passes
 
 ## Step 1.5 — visual pass (realistic but poetic)
-- [ ] Terrain colours: moisture/variety field, richer palette (meadow, golden grass, moss, forest floor, rock strata)
-- [ ] Vegetation: conifers + deciduous, per-instance colours, TSL wind sway, grass tufts + flowers in meadows, varied rocks
-- [ ] Player: nicer explorer model (hat, scarf, backpack), two-segment limbs, bob/lean/breathing
-- [ ] Sky + light: low golden sun, clouds, warm sun / cool sky hemisphere, AgX tone mapping
-- [ ] Atmosphere: TSL fog tinted by sun direction + valley mist (height fog)
-- [ ] Post: TSL RenderPipeline with soft bloom + vignette
-- [ ] Chromium smoke screenshots (WebGL fallback, several seeds) — script, not a test suite
-- [ ] `npm run build` passes, PR opened
+- [x] Terrain colours: moisture/variety field, richer palette (meadow, golden grass, moss, forest floor, rock strata)
+- [x] Vegetation: conifers + deciduous, per-instance colours, TSL wind sway, grass tufts + flowers in meadows, varied rocks
+- [x] Player: nicer explorer model (hat, scarf, backpack), two-segment limbs, bob/lean/breathing
+- [x] Sky + light: low golden sun, clouds, warm sun / cool sky hemisphere, AgX tone mapping
+- [x] Atmosphere: TSL fog tinted by sun direction + valley mist (height fog)
+- [x] Post: TSL RenderPipeline with soft bloom + vignette
+- [x] Chromium smoke screenshots (WebGL fallback, several seeds) — script, not a test suite
+- [x] `npm run build` passes, PR opened (step-1.5 → master, includes step 1)
 
 ## Current task
-Step 1.5 visual pass.
+None. Step 1.5 done, PR open. Do not start step 2 without the user.
 
 ## Next action
-Terrain colours + atmosphere + post (main session); Player model delegated to builder.
+Wait for user review of the PR / feel in a real GPU browser (WebGPU path not seen headless).
 
 ## Blockers
 None.
@@ -46,3 +46,10 @@ None.
 - Fog 40–320 m, camera far 600 m; SkyMesh scaled 5000, drawn at the far plane.
 - shadows="percentage" (WebGPU dropped PCFSoftShadowMap).
 - Smoke-checked once in headless Chromium with ?webgl=1: renders, the player stands on the ground and walks.
+- Step 1.5: terrain gets a moisture field (core); valleys are now U-shaped and ridges wider (V-gorges made every spawn a cliff).
+- Vegetation: conifers + broadleaves (some autumn gold/rust) as merged vertex-coloured geometries, instance tints, TSL wind sway (positionNode, phase from world position).
+- Atmosphere: scene.fogNode = sun-tinted haze (warm toward the sun, cool away) + exponential height mist in valleys.
+- Post: TSL RenderPipeline (bloom 0.28 + warm grade + vignette), AgX tone mapping; PostFX renders at useFrame priority 1.
+- Player body locks X/Z rotation (enabledRotations) — it used to tip over on slopes.
+- Camera: camera-controls colliderMeshes had no effect; replaced by a per-frame clamp above heightAt() + lookAt; maxPolarAngle 0.5π.
+- Chromium checks: `scripts/smoke.cjs` (preinstalled Playwright, not a dependency or test suite) — 3 seeds, fails on page errors, saves screenshots. Only the WebGL fallback is checked headless.

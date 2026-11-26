@@ -14,6 +14,8 @@ export function createRenderer(forceWebGL = false) {
       forceWebGL, // safety net: same renderer, WebGL2 backend
     })
     await renderer.init()
+    renderer.toneMapping = THREE.AgXToneMapping
+    renderer.toneMappingExposure = 1.05
     return renderer
   }
 }

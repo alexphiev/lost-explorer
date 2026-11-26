@@ -8,8 +8,13 @@ export default function Sky() {
     const s = new SkyMesh()
     s.scale.setScalar(5000)
     s.frustumCulled = false
-    s.turbidity.value = 4
-    s.rayleigh.value = 1.5
+    s.turbidity.value = 6
+    s.rayleigh.value = 2.2
+    s.mieCoefficient.value = 0.006
+    s.mieDirectionalG.value = 0.86
+    s.cloudCoverage.value = 0.45
+    s.cloudDensity.value = 0.35
+    s.cloudElevation.value = 0.6
     s.sunPosition.value.copy(SUN_DIRECTION)
     return s
   }, [])
