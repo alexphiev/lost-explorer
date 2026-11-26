@@ -3,10 +3,10 @@
 Branch: `step-1`
 
 ## Definition of done
-- [ ] Next.js 16 + React 19.2 + TypeScript + Tailwind, exact versions pinned
+- [x] Next.js 16 + React 19.2 + TypeScript + Tailwind, exact versions pinned
 - [ ] Structure (§3) limited to: app/play, game/core, game/state, game/render, game/world
 - [ ] WebGPU via async `gl` callback, `forceWebGL` fallback via `?webgl=1`
-- [ ] 1000×1000 m seeded terrain in game/core (alea + simplex-noise): hills, ridges, valleys; random seed per load, shown top-left, replayable via `?seed=xxx`
+- [x] 1000×1000 m seeded terrain in game/core (alea + simplex-noise): hills, ridges, valleys; random seed per load, shown top-left, replayable via `?seed=xxx`
 - [ ] Vertex colours by altitude/slope (meadow, forest, rock), Lambert, flat shading
 - [ ] Rapier heightfield collider (trimesh fallback)
 - [ ] ~2000 trees (cone+cylinder) + 500 rocks, instanced, deterministic, not on steep slopes
@@ -17,10 +17,10 @@ Branch: `step-1`
 - [ ] `npm run build` passes
 
 ## Current task
-Scaffolding Next.js project.
+Render layer: renderer, stores, Terrain, Vegetation, Sky.
 
 ## Next action
-Write package.json/config, install, then game/core terrain.
+Write game/render + game/state + game/world/Terrain.tsx, then Player (ecctrl 2).
 
 ## Blockers
 None.
@@ -29,3 +29,5 @@ None.
 - TypeScript pinned to 5.9.3 (TS 7 is the native port; Next 16 tooling targets 5.x).
 - `leva` installed only because it is a peer dependency of ecctrl 2.
 - No ESLint for now (not in the definition of done).
+- Rapier heightfield is column-major (index = iz + ix*(n)); verified with a ray-cast script. Core stores row-major and transposes.
+- Seed shown top-left is only the generation half of the item; display lands with Scene.
