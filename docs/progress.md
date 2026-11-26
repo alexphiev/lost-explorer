@@ -1,6 +1,6 @@
-# Progress — MVP step 1 (+1.5)
+# Progress — MVP
 
-Branches: `step-1` (done), `step-1.5` (current, PR → master)
+Branches: `step-1`, `step-1.5` (merged in #2), `step-2` (current)
 
 ## Definition of done
 - [x] Next.js 16 + React 19.2 + TypeScript + Tailwind, exact versions pinned
@@ -26,11 +26,21 @@ Branches: `step-1` (done), `step-1.5` (current, PR → master)
 - [x] Chromium smoke screenshots (WebGL fallback, several seeds) — script, not a test suite
 - [x] `npm run build` passes, PR opened (step-1.5 → master, includes step 1)
 
+## Step 2 — 2D map prototype (+ 3D physics fixes)
+- [ ] core: world-space height function shared by the 6 km map and the 1 km 3D scene
+- [ ] core: valley = map grid + start + village (low ground, 2–2.8 km away)
+- [ ] core: viewshed (climb reveals, farther = vaguer), fog of war Uint8Array (0 unseen, 1 far, 2 near)
+- [ ] core/travel: bearing walk in 2 h chunks; stops: cliff, scrub, map edge, night, exhausted, berries, smoke, village; days/hour/energy; win/lose
+- [ ] state: zustand journey store calling core
+- [ ] /map: canvas map (hillshade, contours, fog), click to set bearing, Walk / Climb / Rest, HUD (day, hour, energy, log)
+- [ ] 3D physics: tree + rock colliders, visual triangles match the Rapier heightfield, max climbable slope, respawn if fallen
+- [ ] `npm run build` + Chromium smoke (/play and /map), PR
+
 ## Current task
-None. Step 1.5 done, PR #2 open and reviewed (fixes applied, rest in docs/ideas.md). Do not start step 2 without the user.
+Step 2.
 
 ## Next action
-User review of PR #2 + check WebGPU on a real GPU browser, then step 2 (2D map prototype, tech doc §15).
+Core refactor (terrain height function, valley, viewshed, travel).
 
 ## Blockers
 None.
