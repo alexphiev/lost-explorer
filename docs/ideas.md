@@ -25,3 +25,11 @@ Code hygiene
 - No ESLint, no tests (by decision for the MVP).
 - `readUrlOnce` mutates stores inside a `useState` initialiser: fine now, move to a proper init when the app has a menu / several runs.
 - Touch controls and pointer-lock option for the camera.
+
+## Step 2 follow-ups
+- Pose while sliding down a too-steep slope looks like a jump (arms out): add a "slide" pose.
+- 3D scene doesn't show map scrub patches yet; step 3 should place thick bushes where `field.scrub` is true.
+- Map: zoom/pan, hover tooltip (height, "scrub", "cliff"), click-and-hold to preview where a 2 h walk would stop.
+- Rivers (traced downhill) as followable guides and obstacles, per the concept.
+- Balance: tune walk speed, energy, days after playtests; consider more stop types (old trail, hut, cairn, fog bank).
+- Move valley generation (flood fill + sampling, ~60 ms) to the worker when it grows.

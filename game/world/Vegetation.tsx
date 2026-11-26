@@ -1,5 +1,6 @@
 'use client'
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useRapier } from '@react-three/rapier'
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { Instance, Vegetation as VegetationData } from '@/game/core/placement'
@@ -83,6 +84,36 @@ function fill(
   mesh.computeBoundingSphere()
 }
 
+const rockSquash = (it: Instance) => 0.45 + it.tint * 0.4
+const ROCK_SINK = 0.25
+const TREE_SINK = 0.2
+
+/** Fixed colliders: trunks (conifers a bit wider: low branches) and rocks. Created imperatively (2 500 colliders). */
+function VegetationColliders({ data }: { data: VegetationData }) {
+  const { world, rapier } = useRapier()
+  useEffect(() => {
+    const body = world.createRigidBody(rapier.RigidBodyDesc.fixed())
+    const trunk = (it: Instance, radius: number, height: number) => {
+      const half = (height * it.scale) / 2
+      world.createCollider(
+        rapier.ColliderDesc.cylinder(half, radius * it.scale).setTranslation(it.x, it.y - TREE_SINK * it.scale + half, it.z),
+        body,
+      )
+    }
+    for (const it of data.conifers) trunk(it, 0.7, 4)
+    for (const it of data.broadleaves) trunk(it, 0.35, 3)
+    for (const it of data.rocks) {
+      const half = it.scale * rockSquash(it) * 0.85
+      world.createCollider(
+        rapier.ColliderDesc.cylinder(half, it.scale * 0.8).setTranslation(it.x, it.y - ROCK_SINK * it.scale, it.z),
+        body,
+      )
+    }
+    return () => world.removeRigidBody(body)
+  }, [world, rapier, data])
+  return null
+}
+
 const BROADLEAF = ['#6f9a3e', '#7fa646', '#5d8a3a', '#8aa84a', '#c9a23a', '#b8642f']
 const FLOWERS = ['#f4f1e6', '#f1d65a', '#a98fd6', '#d9473a', '#f3b6c8']
 const DRY = new THREE.Color('#d8c477')
@@ -109,18 +140,19 @@ export default function Vegetation({ data }: { data: VegetationData }) {
   const rocks = useRef<THREE.InstancedMesh>(null)
 
   useLayoutEffect(() => {
-    fill(conifers.current, data.conifers, (it, c) => c.setHSL(0.08 + it.tint * 0.12, 0.25, 0.85 + it.tint * 0.25), undefined, 0.2)
-    fill(broadleafTrunks.current, data.broadleaves, (_it, c) => c.set('#ffffff'), undefined, 0.2)
+    fill(conifers.current, data.conifers, (it, c) => c.setHSL(0.08 + it.tint * 0.12, 0.25, 0.85 + it.tint * 0.25), undefined, TREE_SINK)
+    fill(broadleafTrunks.current, data.broadleaves, (_it, c) => c.set('#ffffff'), undefined, TREE_SINK)
     fill(broadleaves.current, data.broadleaves, (it, c) => {
       c.set(BROADLEAF[Math.floor(it.tint * BROADLEAF.length)])
-    }, undefined, 0.2)
+    }, undefined, TREE_SINK)
     fill(grass.current, data.grass, (it, c) => c.copy(DRY).lerp(LUSH, it.tint))
     fill(flowers.current, data.flowers, (it, c) => c.set(FLOWERS[Math.floor(it.tint * FLOWERS.length)]))
-    fill(rocks.current, data.rocks, (it, c) => c.setHSL(0.08 + it.tint * 0.05, 0.08, 0.45 + it.tint * 0.15), (it) => 0.45 + it.tint * 0.4, 0.25)
+    fill(rocks.current, data.rocks, (it, c) => c.setHSL(0.08 + it.tint * 0.05, 0.08, 0.45 + it.tint * 0.15), rockSquash, ROCK_SINK)
   }, [data])
 
   return (
     <>
+      <VegetationColliders data={data} />
       <instancedMesh ref={conifers} args={[geos.conifer, mats.conifer, data.conifers.length]} castShadow receiveShadow />
       <instancedMesh ref={broadleafTrunks} args={[geos.broadleafTrunk, mats.broadleafTrunk, data.broadleaves.length]} castShadow receiveShadow />
       <instancedMesh ref={broadleaves} args={[geos.broadleaf, mats.broadleaf, data.broadleaves.length]} castShadow receiveShadow />
