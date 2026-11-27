@@ -145,3 +145,4 @@ None.
 - Streams are 6–9 m wide: narrower ones fall between the 3.9 m vertices of the 3D mesh and show as dashes.
 - Cold water: −0.22 energy/s swimming (+0.12 in strong current), −0.04·wade/s wading; stored in runStore.coldLoss (frame loop), applied in leaveScene.
 - Falls: trip hazards are a compact Float32Array (trunks, rocks, stumps, logs) tested by proximity in the frame loop, not contact events; damage is per-scene runStore.injury applied in leaveScene (same pattern as coldLoss). Random rolls use Math.random (gameplay, not generation).
+- Sun glare (issue #25): Mie lobe tighter (g 0.93, coef 0.0025), sky brightness near the sun compressed and warmed, bloom 0.12 / radius 0.15 on input capped at 2.
