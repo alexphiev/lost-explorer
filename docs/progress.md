@@ -139,3 +139,4 @@ None.
 - Stream valleys are wide V's (bank 0.25 + 0.1·e + 0.0016·e² m within 170 m); upstream of a segment its carve uses the water level alongside upstream, so steep stretches don't undercut themselves.
 - Streams are 6–9 m wide: narrower ones fall between the 3.9 m vertices of the 3D mesh and show as dashes.
 - Cold water: −0.22 energy/s swimming (+0.12 in strong current), −0.04·wade/s wading; stored in runStore.coldLoss (frame loop), applied in leaveScene.
+- Run form (#23): arms blend from the walk swing to a shoulder-driven run swing (upper arm −0.45…+0.85 rad, more back than forward, elbow ~80–92°, slight inward rotation) instead of a fixed 1.3 rad elbow bend that put the hands up in a boxer guard; run lean capped at ~8° (was ~18°), heel kick + knee drive in the swing phase, 3.5 cm mid-stance compression.

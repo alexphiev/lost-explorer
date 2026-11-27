@@ -33,6 +33,18 @@ const HAT = '#8a6a3c'
 
 const WALK_VEL = 2.4 // m/s, brisk hiking (a bit faster than real life: it's a game)
 const RUN_VEL = 6.2 // m/s, running (hold Shift)
+// running form (rad unless noted): arms swing from the shoulder, elbows ~85°, modest forward lean
+const RUN_ARM_GAIN = 1.3 // arm swing per rad of opposite-thigh swing (grows with stride, so with speed)
+const RUN_ARM_FWD = 0.6 // forward swing is shorter than the backward one
+const RUN_ARM_BWD = 1.15
+const RUN_ARM_BACK_BIAS = 0.1 // elbows carried slightly behind the torso
+const RUN_ARM_MIN = -0.45 // most forward upper arm (~26°): hands stop at the lower chest
+const RUN_ARM_MAX = 0.85 // most backward upper arm (~49°): hands pass by the hip
+const RUN_ELBOW = 1.45 // elbow bend (~83°), closes to ~80° in front, opens to ~92° behind
+const RUN_LEAN = 0.14 // torso lean at running pace (~8°)
+const RUN_HEEL_KICK = 0.9 // extra knee flex in the swing phase
+const RUN_KNEE_DRIVE = 0.25 // extra thigh lift late in the swing
+const RUN_SQUAT = 0.035 // m, stance compression at mid-stance
 const ACC_DELTA = 0.2 // ecctrl accDeltaTime
 const HIP_X = 0.11
 const BASE_FOV = 55
@@ -645,8 +657,12 @@ export default function Player({
       const groundY = grounded ? e!.standPoint.y : hC
 
       let bodyTarget = -0.03 - 0.12 * steepness // knees never locked, lower on steep ground
+      let squat = 0
       for (let i = 0; i < 2; i++) {
-        footAlongCycle((g.phase + i * 0.5) % 1, duty, stride, lift, foot)
+        const ph = (g.phase + i * 0.5) % 1
+        footAlongCycle(ph, duty, stride, lift, foot)
+        // running: the legs absorb the landing, lowest at mid-stance
+        if (foot.stance) squat = Math.max(squat, Math.sin((Math.PI * ph) / duty))
         const fz = foot.z * g.amp
         const fx = i === 0 ? HIP_X : -HIP_X
         const wx = P.x + side.x * fx + fwd.x * fz
@@ -657,6 +673,7 @@ export default function Player({
         feetSwing[i] = foot.swing
         bodyTarget = Math.min(bodyTarget, bodyDropFor(ground, fz))
       }
+      bodyTarget -= RUN_SQUAT * runBlend * g.amp * squat
       bodyTarget = clamp(bodyTarget - g.landing - (sliding ? 0.28 : 0), -0.45, 0)
       g.bodyY = airborne ? damp(g.bodyY, 0, 6, dt) : damp(g.bodyY, bodyTarget, 18, dt)
 
@@ -676,6 +693,12 @@ export default function Player({
           pose.thigh[i] = leg.thigh
           pose.knee[i] = leg.knee
           pose.ankle[i] = leg.ankle
+          if (feetSwing[i] > 0) {
+            // running swing: heel kicks up behind, then the knee drives forward
+            const k = runBlend * g.amp * Math.sin(Math.PI * feetSwing[i])
+            pose.knee[i] += RUN_HEEL_KICK * k * (1 - 0.5 * feetSwing[i])
+            pose.thigh[i] -= RUN_KNEE_DRIVE * k * feetSwing[i]
+          }
         }
       }
       kJoints = airborne || sliding ? 12 : 45
@@ -684,14 +707,27 @@ export default function Player({
       const balance = Math.max(steepness * 0.6, sliding ? 1 : 0, airborne ? 0.8 : 0, wade * 0.7)
       for (let i = 0; i < 2; i++) {
         const other = thighs[1 - i].current
-        const swing = other ? other.rotation.x * (0.75 + 0.3 * runBlend) * g.amp : 0
-        pose.armX[i] = airborne ? -0.5 : sliding ? 0.5 : swing + 0.05
-        pose.armZ[i] = (i === 0 ? 1 : -1) * (0.06 + balance * (airborne ? 1.2 : 0.8))
-        pose.fore[i] = -(0.2 + 1.1 * runBlend + 0.35 * Math.max(0, -swing))
+        const t = other ? other.rotation.x * g.amp : 0 // > 0: the opposite leg is back, so this arm swings back
+        // walking: loose arms, elbows barely bent
+        const walkX = t * 0.75 + 0.05
+        const walkFore = -(0.2 + 0.35 * Math.max(0, -t * 0.75))
+        // running: swing from the shoulder, more back than forward, elbow ~80–92°, hands hip → lower chest
+        const rs = t * RUN_ARM_GAIN
+        const runX = clamp(RUN_ARM_BACK_BIAS + (rs < 0 ? rs * RUN_ARM_FWD : rs * RUN_ARM_BWD), RUN_ARM_MIN, RUN_ARM_MAX)
+        const fwd = clamp(-runX / -RUN_ARM_MIN, 0, 1)
+        const back = clamp(runX / RUN_ARM_MAX, 0, 1)
+        const runFore = -(RUN_ELBOW - 0.05 * fwd + 0.15 * back)
+        const free = airborne || sliding ? 0 : 1 - Math.min(1, balance)
+        pose.armX[i] = airborne ? -0.5 : sliding ? 0.5 : walkX + (runX - walkX) * runBlend
+        pose.armZ[i] = (i === 0 ? 1 : -1) * (0.06 + 0.04 * runBlend + balance * (airborne ? 1.2 : 0.8))
+        pose.fore[i] = walkFore + (runFore - walkFore) * runBlend
+        // inward rotation of the upper arm: forearms point a little toward the midline, more on the forward swing
+        pose.armY[i] = (i === 0 ? -1 : 1) * runBlend * free * (0.15 + 0.2 * fwd)
       }
 
       // body: lean into speed and slope, roll into turns, hip twist; scramble with hands on steep slopes
-      pose.lean = sliding ? -0.25 : airborne ? 0.1 : 0.035 * speed + 0.1 * runBlend + 0.5 * clamp(grade, -0.4, 0.6)
+      const speedLean = 0.035 * speed + (RUN_LEAN - 0.035 * speed) * runBlend
+      pose.lean = sliding ? -0.25 : airborne ? 0.1 : speedLean + 0.5 * clamp(grade, -0.4, 0.6)
       if (!airborne && !sliding) scrambleArms(g.phase, clamp((pitch - 0.45) / 0.35, 0, 1), pose)
       g.roll = damp(g.roll, clamp(-e!.currAngVel.y * speed * 0.05, -0.25, 0.25), 6, dt)
       pose.bodyRoll = g.roll + (g.amp < 0.2 ? Math.sin(time * 0.8) * 0.015 : 0)
@@ -715,6 +751,7 @@ export default function Player({
       if (a) {
         a.rotation.x = ease(a.rotation.x, pose.armX[i], g.mode === 'ground' ? 14 : kJoints, dt)
         a.rotation.z = ease(a.rotation.z, pose.armZ[i], 8, dt)
+        a.rotation.y = ease(a.rotation.y, g.mode === 'ground' ? pose.armY[i] : 0, 8, dt)
       }
       if (f) f.rotation.x = ease(f.rotation.x, pose.fore[i], 14, dt)
     }

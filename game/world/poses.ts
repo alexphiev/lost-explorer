@@ -15,6 +15,7 @@ export interface Pose {
   ankle: number[]
   armX: number[]
   armZ: number[]
+  armY: number[] // upper-arm inward rotation (ground gait only)
   fore: number[]
 }
 
@@ -31,6 +32,7 @@ export function createPose(): Pose {
     ankle: [0, 0],
     armX: [0, 0],
     armZ: [0.06, -0.06],
+    armY: [0, 0],
     fore: [-0.2, -0.2],
   }
 }
