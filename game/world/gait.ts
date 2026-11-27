@@ -9,9 +9,16 @@ export const SHIN = 0.42 // knee → sole
 export const HIP_Y = -0.15 // hip height in the body group
 const REACH = (THIGH + SHIN) * 0.985
 
-/** Walking speed factor from the grade along the walking direction (Tobler's hiking function, 1 on flat ground). */
-export function toblerFactor(grade: number): number {
-  return Math.exp(-3.5 * Math.abs(grade + 0.05)) / Math.exp(-3.5 * 0.05)
+/**
+ * Speed factor from the grade along the direction of travel (1 on flat ground).
+ * Gameplay curve, inspired by Tobler but kinder: uphill slows down to ~55 %, gentle and medium descents are
+ * faster (up to +15 % at −25 %), and only very steep descents brake a little (never below 80 %).
+ */
+export function slopeSpeedFactor(grade: number): number {
+  if (grade >= 0) return Math.max(0.55, 1 - 0.9 * grade)
+  const down = -grade
+  if (down <= 0.25) return 1 + 0.6 * down
+  return Math.max(0.8, 1.15 - (down - 0.25) * 0.8)
 }
 
 /** Stride length (one full cycle, two steps) in metres for a speed in m/s, shorter uphill. */

@@ -7,7 +7,7 @@ import { EcctrlCameraControls, type EcctrlCameraControlsHandle } from 'ecctrl/ca
 import * as THREE from 'three/webgpu'
 import { heightAt, type Terrain } from '@/game/core/terrain'
 import { runStore } from '@/game/state/run'
-import { bodyDropFor, footAlongCycle, HIP_Y, solveLeg, strideLength, THIGH, toblerFactor, type FootTarget, type LegAngles } from './gait'
+import { bodyDropFor, footAlongCycle, HIP_Y, solveLeg, slopeSpeedFactor, strideLength, THIGH, type FootTarget, type LegAngles } from './gait'
 import { climbPose, createPose, mantlePose, scrambleArms, swimPose } from './poses'
 
 export type Controls = 'forward' | 'backward' | 'leftward' | 'rightward' | 'jump' | 'run'
@@ -30,11 +30,13 @@ const PANTS = '#5a5f3a'
 const BOOT = '#3b2a1c'
 const HAT = '#8a6a3c'
 
-const WALK_VEL = 1.8 // m/s, brisk hiking pace
-const RUN_VEL = 4.5 // m/s, jogging with a pack
+const WALK_VEL = 2.4 // m/s, brisk hiking (a bit faster than real life: it's a game)
+const RUN_VEL = 6.2 // m/s, running (hold Shift)
+const ACC_DELTA = 0.2 // ecctrl accDeltaTime
 const HIP_X = 0.11
 const BASE_FOV = 55
-const CLIMB_MIN_SLOPE = 0.84 // rise/run ahead (~40°) that turns walking into climbing
+const CLIMB_MIN_SLOPE = 0.9 // rise/run over the next 1.5 m (~42°) that turns walking into climbing
+const GRIP_WALL_ANGLE = (55 * Math.PI) / 180 // grip drains on walls steeper than this; slabs below are restful
 const CLIMB_EXIT_ANGLE = 0.61 // rad (~35°): ground walkable again
 const SWIM_DEPTH = 1.3 // water deeper than this under you → swim
 const ROOT_TO_FEET = 1.0
@@ -50,6 +52,7 @@ export const CLIMB_STRIDE = 6
 export interface PlayerHud {
   prompt: HTMLDivElement | null
   grip: HTMLDivElement | null
+  gripBox: HTMLDivElement | null
 }
 
 type Mode = 'ground' | 'climb' | 'mantle' | 'swim'
@@ -174,6 +177,7 @@ export default function Player({
     lean: 0,
     roll: 0,
     camPull: 1,
+    slopeF: 1,
     grip: 1,
     mantleT: 0,
     mantleFromX: 0,
@@ -267,6 +271,11 @@ export default function Player({
       rb.setLinvel({ x: 0, y: 0, z: 0 }, true)
       return
     }
+    if (debugLog) {
+      const w = window as unknown as { __bearingSpeed?: number; __bearingRun?: boolean }
+      w.__bearingSpeed = e.moveSpeed
+      w.__bearingRun = e.runActive
+    }
     const store = runStore.getState().playerPosition
     store.x = P.x
     store.y = P.y
@@ -332,6 +341,7 @@ export default function Player({
 
     // ================= modes =================
     let climbSteep = 0
+    let draining = false // grip spent this frame (drives the Grip widget)
     let moving = 0
     if (g.mode === 'ground') {
       const fwd = e.bodyZAxis
@@ -354,7 +364,7 @@ export default function Player({
           g.climbY = P.y
         } else {
           // → climb a slope steeper than ~40° ahead
-          const ahead = (heightAt(terrain, P.x + fwd.x * 0.7, P.z + fwd.z * 0.7) - hC) / 0.7
+          const ahead = (heightAt(terrain, P.x + fwd.x * 1.5, P.z + fwd.z * 1.5) - hC) / 1.5
           if (ahead > CLIMB_MIN_SLOPE) {
             toCustom('climb')
             g.climb = 'terrain'
@@ -400,16 +410,19 @@ export default function Player({
         let vx = (ux * cosT * upDown + uz * leftRight) * speed
         let vz = (uz * cosT * upDown - ux * leftRight) * speed
         let vy = sinT * upDown * speed
-        // stay against the wall: spring toward a standing-height offset, press lightly into the slope
+        // stay against the wall: spring toward the surface height only (no push into the slope: you move only with input)
         vy += follow(hC + ROOT_TO_FEET + 0.25 * (1 / cosT - 1) - P.y, 0.4)
-        vx += ux * 0.3
-        vz += uz * 0.3
         moving = anyMove ? 1 : 0
         g.phase += (Math.hypot(vx, vy, vz) * dt * moving) / 0.9
         g.yaw = damp(g.yaw, g.yaw + wrapAngle(Math.atan2(ux, uz) - g.yaw), 8, dt)
         setBody(vx, vy, vz, g.yaw)
-        g.grip -= dt * (0.04 + 0.08 * climbSteep) * (input.run ? 1.6 : 1) * (anyMove ? 1 : 0.6)
-        prompt = 'Space  let go'
+        // grip: walls tire your arms, on slabs you can rest
+        if (theta > GRIP_WALL_ANGLE) {
+          g.grip -= dt * (0.02 + 0.05 * climbSteep) * (input.run ? 1.6 : 1) * (anyMove ? 1 : 0.6)
+          draining = true
+        }
+        else if (!anyMove) g.grip = Math.min(1, g.grip + dt * 0.08)
+        prompt = 'Climbing  ·  Space jump off'
         if (theta < CLIMB_EXIT_ANGLE) {
           if (upDown > 0) {
             // over the top: pull up onto the flatter ground ahead
@@ -431,11 +444,12 @@ export default function Player({
         g.phase += (speed * dt * moving) / 0.7
         g.yaw = damp(g.yaw, g.yaw + wrapAngle(Math.atan2(c.x - P.x, c.z - P.z) - g.yaw), 10, dt)
         setBody(follow(tx - P.x), follow(g.climbY - P.y), follow(tz - P.z), g.yaw)
-        g.grip -= dt * 0.05 * (input.run ? 1.6 : 1) * (anyMove ? 1 : 0.6)
+        g.grip -= dt * 0.025 * (input.run ? 1.6 : 1) * (anyMove ? 1 : 0.5)
+        draining = true
         if (c.tree && feetNow >= c.top - 0.05) {
           prompt = 'E  look around   ·   S  climb down'
           if (ePressed) onLookAround()
-        } else prompt = 'Space  let go'
+        } else prompt = 'Climbing  ·  Space jump off'
         if (!c.tree && feetNow >= c.top - 0.25 && upDown > 0) {
           // onto the top of the rock
           const inward = Math.min(c.r * 0.5, 0.6)
@@ -547,15 +561,18 @@ export default function Player({
       const wade = water > -Infinity ? clamp((water - feet) / 1.2, 0, 1) : 0
 
       // Tobler (slope) × water drag: brake against ecctrl's push
-      if (grounded && hv > 0.2) {
-        const f = toblerFactor(grade) * (1 - 0.55 * wade)
-        if (f < 0.98) {
-          const b = Math.min(0.2 * (1 / f - 1) * dt * 60, 0.8) * rb!.mass()
-          vec.x = -vel.x * b
-          vec.y = 0
-          vec.z = -vel.z * b
-          rb!.applyImpulse(vec, true)
-        }
+      // slope (slower uphill, faster downhill) × water drag, eased so bumps don't jerk.
+      // ecctrl pushes each frame by Δv = accDeltaTime · slideFriction · (vmax − v); an extra impulse
+      // −b·v with b = k·(1/f − 1) (k = that same gain) settles the speed at exactly f · vmax
+      // (b < 0 is a push, for the faster descents).
+      g.slopeF = damp(g.slopeF, slopeSpeedFactor(grade) * (1 - 0.5 * wade), 4, dt)
+      if (grounded && hv > 0.2 && Math.abs(g.slopeF - 1) > 0.02) {
+        const k = ACC_DELTA * e!.slideFriction
+        const b = clamp(k * (1 / g.slopeF - 1), -0.08, 0.5) * rb!.mass()
+        vec.x = -vel.x * b
+        vec.y = 0
+        vec.z = -vel.z * b
+        rb!.applyImpulse(vec, true)
       }
 
       // air, landing, sliding
@@ -682,9 +699,9 @@ export default function Player({
       h.prompt.textContent = prompt
       g.prompt = prompt
     }
-    const gripShown = g.mode === 'climb' || g.grip < 0.99 ? Math.round(g.grip * 50) / 50 : -1
+    const gripShown = draining ? Math.round(g.grip * 50) / 50 : -1
     if (h?.grip && gripShown !== g.gripShown) {
-      h.grip.style.opacity = gripShown < 0 ? '0' : '1'
+      if (h.gripBox) h.gripBox.style.opacity = gripShown < 0 ? '0' : '1'
       h.grip.style.transform = `scaleX(${Math.max(0, gripShown)})`
       h.grip.style.background = g.grip < 0.25 ? '#e05a3a' : '#e8d9a0'
       g.gripShown = gripShown
@@ -757,14 +774,15 @@ export default function Player({
         enable={ecctrlOn}
         position={spawn}
         enabledRotations={[false, true, false]}
-        slopeMaxAngle={0.7}
+        slopeMaxAngle={Math.atan(CLIMB_MIN_SLOPE)}
         capsuleHalfHeight={0.5}
         capsuleRadius={0.3}
         maxWalkVel={WALK_VEL}
         maxRunVel={RUN_VEL}
         jumpVel={4.2}
-        accDeltaTime={0.12}
-        decDeltaTime={0.15}
+        enableToggleRun={false}
+        accDeltaTime={ACC_DELTA}
+        decDeltaTime={0.2}
       >
         {/* feet at -1.0 (capsule bottom -0.8, float height 0.2) */}
         <group ref={root}>
