@@ -88,11 +88,19 @@ export default function Game() {
   }, [ready])
 
   if (!ready || !valley) return null
-  return layer === 'scene' && center ? (
-    <div className="absolute inset-0">
-      <Scene valley={valley} center={center} />
-    </div>
-  ) : (
-    <MapView />
+  const onFoot = layer === 'scene'
+  return (
+    <>
+      {center && (
+        <div className={`absolute inset-0 ${onFoot ? '' : 'invisible'}`}>
+          <Scene key={`${center.x}:${center.z}`} valley={valley} center={center} active={onFoot} />
+        </div>
+      )}
+      {!onFoot && (
+        <div className="relative z-10">
+          <MapView />
+        </div>
+      )}
+    </>
   )
 }

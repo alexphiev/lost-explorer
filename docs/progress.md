@@ -94,6 +94,8 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] Level design: 1 village 3.5–4.3 km, 3 clues · 2 boat 3.8–4.8 km, 3 · 3 cave 4–5 km, 2 cairns + piton · 4 cabin 4.3–5.3 km, 2 · 5 hut 4.3–5.7 km, 2 · 6 village 5.2–6 km, 1
 - [x] Review fixes: small goals finish within 30 m (villages 120 m), small clues/goals found only by passing close (not from a viewpoint's sharp fog), saves while in 3D fold in the live position/time/cold/falls, save on tab hide
 - [x] 3D spawn always on the nearest flat, dry, clear ground to the map position (`safeSpawn`, ≤ 350 m away), and no fall damage during the first 4 s
+- [x] Map ⇄ 3D without losing anything: the scene stays mounted, paused (`frameloop="never"`, physics paused) and hidden behind the map; coming back resumes the same tile, decor, player position and camera. Only a map walk that moves you drops it (rest / climb on the map keep it); energy, health and hour re-sync on each visit
+- [x] 3D compass: heading strip at the top (camera yaw, updated in the frame loop without re-render), amber mark = bearing chosen on the map
 - [ ] Accounts + database (#29), per-level leaderboard (#30)
 
 ## Current task
@@ -107,6 +109,7 @@ None.
 
 ## Decisions (one line each)
 - Local save in localStorage, not a cookie: the fog of war alone is ~22 KB (cookies cap at 4 KB) and nothing needs to reach a server yet.
+- The 3D scene is kept alive behind the map rather than rebuilt: exact position, decor and camera, at the cost of keeping its GPU resources while on the map.
 - Level links are plain `<a>` (full reload): the game store and the WebGPU scene start clean for each level.
 - TypeScript pinned to 5.9.3 (TS 7 is the native port; Next 16 tooling targets 5.x).
 - `leva` installed only because it is a peer dependency of ecctrl 2.

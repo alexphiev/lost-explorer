@@ -356,7 +356,8 @@ export default function Player({
   // E = climb a tree / look around (letter by key so AZERTY works)
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key.toLowerCase() === 'e') s.current.ePressed = true
+      // only while on foot (the scene stays mounted, paused, behind the map)
+      if (ev.key.toLowerCase() === 'e' && runStore.getState().sceneEnteredAt) s.current.ePressed = true
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

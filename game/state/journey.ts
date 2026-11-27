@@ -26,7 +26,7 @@ interface Journey {
   /** bearing chosen on the map, degrees clockwise from north (null = none yet) */
   bearing: number | null
   layer: 'map' | 'scene'
-  /** world position the 3D tile is centred on */
+  /** world position the 3D tile is centred on; kept while the scene waits behind the map */
   sceneCenter: Point | null
   result: Result | null
   start: (seed: string, level?: number | null) => void
@@ -86,7 +86,10 @@ export const useJourney = create<Journey>((set, get) => ({
   walk: () => {
     const { valley, run, bearing } = get()
     if (!valley || !run || bearing === null) return
-    set({ run: walk(valley, run, bearing).state })
+    const next = walk(valley, run, bearing).state
+    // walking on the map moves you on: the 3D scene waiting behind the map is dropped
+    const moved = next.x !== run.x || next.z !== run.z
+    set(moved ? { run: next, sceneCenter: null } : { run: next })
   },
   climb: () => {
     const { valley, run } = get()
@@ -98,7 +101,9 @@ export const useJourney = create<Journey>((set, get) => ({
   },
   enterScene: () => {
     const { run } = get()
-    if (run && run.status === 'playing') set({ layer: 'scene', sceneCenter: { x: snapToTileGrid(run.x), z: snapToTileGrid(run.z) } })
+    if (!run || run.status !== 'playing') return
+    // back to the scene left behind the map, exactly as it was; else a new one around where you stand
+    set({ layer: 'scene', sceneCenter: get().sceneCenter ?? { x: snapToTileGrid(run.x), z: snapToTileGrid(run.z) } })
   },
   leaveScene: (localX, localZ, seconds, climbed) => {
     const { valley, run, sceneCenter } = get()
@@ -107,6 +112,7 @@ export const useJourney = create<Journey>((set, get) => ({
     runStore.getState().coldLoss = 0
     runStore.getState().injury = 0
     if (climbed && next.status === 'playing') next = climb(valley, next).state
-    set({ run: next, layer: 'map', sceneCenter: null })
+    // the scene stays where it is (paused behind the map) until a map walk moves you
+    set({ run: next, layer: 'map' })
   },
 }))
