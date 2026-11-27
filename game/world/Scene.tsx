@@ -34,7 +34,7 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
     return {
       terrain,
       vegetation: placeVegetation(terrain, valley.field, valley.seed),
-      houses: placeVillage(terrain, valley.seed, valley.village.x, valley.village.z),
+      houses: placeVillage(terrain, valley.field, valley.seed, valley.village.x, valley.village.z),
       spawn: [0, heightAt(terrain, 0, 0) + 1.5, 0] as [number, number, number],
     }
   }, [valley, center])

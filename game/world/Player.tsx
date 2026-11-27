@@ -481,7 +481,10 @@ export default function Player({
     }
 
     let crawl = 0
-    if (g.mode === 'swim') {
+    if (g.mode === 'swim' && !(water - hC > SWIM_DEPTH - 0.2)) {
+      // wade out where it gets shallow (or the lake ends: water = −Infinity) before any swim target is computed
+      toGround()
+    } else if (g.mode === 'swim') {
       // camera-relative strokes
       st.camera.getWorldDirection(camDir)
       const cl = Math.hypot(camDir.x, camDir.z) || 1
@@ -504,8 +507,6 @@ export default function Player({
       setBody(g.swimVx, vy, g.swimVz, g.yaw)
       g.phase += sp > 0.1 ? (sp * dt) / 1.8 : dt * 0.4
       g.grip = Math.min(1, g.grip + dt * 0.1)
-      // wade out where it gets shallow
-      if (!(water - hC > SWIM_DEPTH - 0.2)) toGround()
     }
 
     // ================= poses =================

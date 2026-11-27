@@ -134,19 +134,26 @@ export function placeVegetation(t: Terrain, field: HeightField, seed: string): V
   }
 }
 
-/** A few houses around the village if it falls inside the tile (local coordinates). */
-export function placeVillage(t: Terrain, seed: string, villageX: number, villageZ: number): Instance[] {
+/** A few houses around the village if it falls inside the tile (local coordinates); never in a lake. */
+export function placeVillage(t: Terrain, field: HeightField, seed: string, villageX: number, villageZ: number): Instance[] {
   const x0 = villageX - t.centerX
   const z0 = villageZ - t.centerZ
   if (Math.abs(x0) > t.size / 2 - 60 || Math.abs(z0) > t.size / 2 - 60) return []
   const rng = makeRng(seed, 'village')
   const houses: Instance[] = []
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 40 && houses.length < 7; i++) {
     const a = rng() * Math.PI * 2
     const r = 12 + rng() * 45
     const x = x0 + Math.cos(a) * r
     const z = z0 + Math.sin(a) * r
-    houses.push({ x, y: heightAt(t, x, z), z, scale: 0.85 + rng() * 0.4, rotation: rng() * Math.PI, tint: rng() })
+    const scale = 0.85 + rng() * 0.4
+    const rotation = rng() * Math.PI
+    const tint = rng()
+    const y = heightAt(t, x, z)
+    // keep the whole footprint (~6 m) on dry ground
+    const wet = (dx: number, dz: number) => field.water(x + dx + t.centerX, z + dz + t.centerZ) > -Infinity
+    if (wet(0, 0) || wet(4, 0) || wet(-4, 0) || wet(0, 4) || wet(0, -4)) continue
+    houses.push({ x, y, z, scale, rotation, tint })
   }
   return houses
 }
