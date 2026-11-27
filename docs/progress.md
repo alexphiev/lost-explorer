@@ -1,6 +1,6 @@
 # Progress — MVP
 
-Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4, open); `realism-movement` (current, based on step-3)
+Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged; `realism-1` (current, PR #5). `realism-movement` is obsolete (pre-squash base), can be deleted
 
 ## Definition of done
 - [x] Next.js 16 + React 19.2 + TypeScript + Tailwind, exact versions pinned
@@ -58,7 +58,7 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4, open); 
 - [x] Fixed: the left leg was rendered twice
 
 ## Current task
-None. Realism pass 1 done, PR open.
+None. Realism pass 1 done, PR #5 open.
 
 ## Next action
 User feel-test in a real browser; then realism pass 2 (light following the game hour, climbing animation, footstep/wind/bird sounds, ground details).
