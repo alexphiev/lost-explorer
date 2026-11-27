@@ -2,7 +2,8 @@ import { makeRng } from './rng'
 import { createWaterSample } from './rivers'
 import { heightAt, slopeAt } from './terrain'
 import { isScrub, MAX_DOWNHILL, MAX_UPHILL, type Valley } from './valley'
-import { createFog, revealAround, revealViewshed } from './viewshed'
+import { createFog, fogAt, FOG_UNSEEN, revealAround, revealViewshed } from './viewshed'
+import { CLUES, GOALS, type ClueKind } from './goals'
 
 export const DAYS_ALLOWED = 3
 export const DAY_START = 7 // hour the sun rises
@@ -10,7 +11,8 @@ export const NIGHTFALL = 20 // hour walking stops
 const CHUNK_HOURS = 2
 const STEP = 15 // metres per simulation step
 const WALK_SPEED = 2 // km/h off-trail on flat open ground
-const VILLAGE_RADIUS = 120
+const CLUE_NEAR = 120 // metres: small clues are found only by passing this close
+const GOAL_NEAR = 250 // metres: small goals show on the map once you pass this close
 export const HURT = 25 // health below this: slower on the map, no running in 3D
 const WADE_DEPTH = 1.2 // deeper streams (and all rivers) have to be swum: on foot, in the 3D scene
 const ws = createWaterSample()
@@ -28,7 +30,8 @@ export type StopKind =
   | 'edge'
   | 'berries'
   | 'smoke'
-  | 'village'
+  | 'village' // the goal of the level, whatever it is
+  | 'clue'
   | 'climb'
   | 'explore'
   | 'rest'
@@ -39,6 +42,40 @@ export type StopKind =
 export interface Stop {
   kind: StopKind
   message: string
+}
+
+/** A point of interest the player has discovered, pinned on the map. */
+export type MarkKind = 'camp' | 'view' | 'berries' | 'smoke' | 'cliff' | 'scrub' | 'water' | 'village' | 'clue'
+export interface Mark {
+  kind: MarkKind
+  x: number
+  z: number
+  label: string
+  day: number
+  hour: number
+  /** clues: what it is and where it points (degrees from north) */
+  clue?: ClueKind
+  bearing?: number
+}
+
+const MARK_OF: Partial<Record<StopKind, MarkKind>> = { cliff: 'cliff', drop: 'cliff', scrub: 'scrub', lake: 'water', river: 'water', berries: 'berries', village: 'village' }
+const MARK_LABEL: Record<MarkKind, string> = {
+  camp: 'Night camp',
+  view: 'Viewpoint',
+  berries: 'Berry bush',
+  smoke: 'Woodsmoke',
+  cliff: 'Cliff',
+  scrub: 'Thorny scrub',
+  water: 'Deep water',
+  village: 'Village',
+  clue: 'Clue',
+}
+
+/** Pin a mark, unless one of the same kind is already close by. */
+function addMark(s: RunState, kind: MarkKind, x: number, z: number, label = MARK_LABEL[kind]): Mark[] {
+  const marks = s.marks ?? []
+  if (marks.some((m) => m.kind === kind && Math.hypot(m.x - x, m.z - z) < 200)) return marks
+  return [...marks, { kind, x, z, label, day: s.day, hour: s.hour }]
 }
 
 export interface RunState {
@@ -58,6 +95,12 @@ export interface RunState {
   /** counts random rolls so events stay deterministic for a seed + action sequence */
   rolls: number
   log: Stop[]
+  /** discovered points of interest */
+  marks: Mark[]
+  /** indices of the valley's clues already found */
+  found: number[]
+  /** passed close to a small goal (cabin, boat…): it shows on the map */
+  goalSeen?: boolean
 }
 
 const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west']
@@ -83,6 +126,32 @@ function withStop(s: RunState, stop: Stop): { state: RunState; stop: Stop } {
   return { state: { ...s, log: [...s.log, stop] }, stop }
 }
 
+/**
+ * What you come across standing at (x, z): small clues within CLUE_NEAR, cairns as soon as they are on the map,
+ * and a small goal within GOAL_NEAR. Returns the state with them pinned (unchanged object if nothing new) and the journal lines.
+ */
+function spotClues(v: Valley, s: RunState, x: number, z: number, hour = s.hour): { state: RunState; lines: string[] } {
+  const lines: string[] = []
+  let found = s.found ?? []
+  let marks = s.marks ?? []
+  v.clues.forEach((c, i) => {
+    if (found.includes(i)) return
+    const def = CLUES[c.kind]
+    const close = Math.hypot(c.x - x, c.z - z) < CLUE_NEAR
+    if (!close && !(def.far && fogAt(v.map, s.fog, c.x, c.z) !== FOG_UNSEEN)) return
+    found = [...found, i]
+    marks = [...marks, { kind: 'clue', x: c.x, z: c.z, label: def.name, day: s.day, hour, clue: c.kind, bearing: c.bearing }]
+    lines.push(def.text.replace('{dir}', compassName(c.bearing)))
+  })
+  const goalSeen = s.goalSeen || Math.hypot(v.goal.x - x, v.goal.z - z) < GOAL_NEAR
+  if (!lines.length && goalSeen === !!s.goalSeen) return { state: s, lines }
+  return { state: { ...s, found, marks, goalSeen }, lines }
+}
+
+const goalReach = (v: Valley) => GOALS[v.goal.kind].reach
+
+const goalFound = (v: Valley) => GOALS[v.goal.kind].found
+
 export function newRun(v: Valley): RunState {
   const fog = createFog(v.map)
   // looking around from where you woke up
@@ -100,7 +169,9 @@ export function newRun(v: Valley): RunState {
     status: 'playing',
     smelledSmoke: false,
     rolls: 0,
-    log: [{ kind: 'start', message: `Day 1, 08:00. You wake up lost. Reach the village within ${DAYS_ALLOWED} days.` }],
+    marks: [],
+    found: [],
+    log: [{ kind: 'start', message: `Day 1, 08:00. You wake up lost. ${GOALS[v.goal.kind].intro} You have ${DAYS_ALLOWED} days.` }],
   }
 }
 
@@ -116,6 +187,7 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
   const dz = -Math.cos(rad)
   const half = v.map.size / 2
   let { x, z, hour, energy, smelledSmoke, rolls } = s
+  let probe = s // clues and goal sightings along the way
   const path = [...s.path]
   let elapsed = 0
   let wading = false
@@ -189,10 +261,16 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
     if (i % 3 === 0) {
       path.push(x, z)
       revealAround(v.map, s.fog, x, z, 120)
+      const spotted = spotClues(v, probe, x, z, hour)
+      probe = spotted.state
+      if (spotted.lines.length) {
+        stop = { kind: 'clue', message: spotted.lines.join(' ') }
+        break
+      }
     }
 
-    if (Math.hypot(x - v.village.x, z - v.village.z) < VILLAGE_RADIUS) {
-      stop = { kind: 'village', message: 'Rooftops, a barking dog, a road. You made it to the village!' }
+    if (Math.hypot(x - v.village.x, z - v.village.z) < goalReach(v)) {
+      stop = { kind: 'village', message: goalFound(v) }
       break
     }
     if (energy <= 0) {
@@ -209,7 +287,7 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
     rolls++
     const roll = makeRng(v.seed, `event:${rolls}`)()
     const distVillage = Math.hypot(x - v.village.x, z - v.village.z)
-    if (!smelledSmoke && distVillage < 3500 && roll < 0.015) {
+    if (GOALS[v.goal.kind].smoke && !smelledSmoke && distVillage < 3500 && roll < 0.015) {
       smelledSmoke = true
       const toward = compassName(bearingTo(x, z, v.village.x, v.village.z))
       revealViewshed(v.map, s.fog, v.village.x, v.village.z, 30, 150, 0) // a smudge on the map where the smoke rises
@@ -229,7 +307,17 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
 
   path.push(x, z)
   const status = stop?.kind === 'village' ? 'won' : s.status
-  return withStop({ ...s, x, z, hour, energy, path, smelledSmoke, rolls, status }, stop!)
+  let next: RunState = { ...s, x, z, hour, energy, path, smelledSmoke, rolls, status, found: probe.found, marks: probe.marks, goalSeen: probe.goalSeen }
+  const mk = MARK_OF[stop!.kind]
+  if (mk === 'village') next = { ...next, marks: addMark(next, 'village', v.village.x, v.village.z) }
+  else if (mk) {
+    // obstacles are pinned a little ahead, where they block the way
+    const r = (bearing * Math.PI) / 180
+    const ahead = mk === 'berries' ? 0 : 40
+    next = { ...next, marks: addMark(next, mk, x + Math.sin(r) * ahead, z - Math.cos(r) * ahead) }
+  }
+  if (stop!.kind === 'smoke') next = { ...next, marks: addMark(next, 'smoke', v.village.x, v.village.z) }
+  return withStop(next, stop!)
 }
 
 /** Time spent exploring on foot in the 3D scene: move to world (x, z). */
@@ -237,11 +325,13 @@ export function explore(v: Valley, s: RunState, x: number, z: number, hours: num
   if (s.status !== 'playing') return s
   const moved = Math.hypot(x - s.x, z - s.z)
   revealAround(v.map, s.fog, x, z, 120)
-  const won = Math.hypot(x - v.village.x, z - v.village.z) < VILLAGE_RADIUS
+  const won = Math.hypot(x - v.village.x, z - v.village.z) < goalReach(v)
   const minutes = Math.round(hours * 60)
+  const spotted = spotClues(v, s, x, z)
+  s = spotted.state
   const stop: Stop = won
-    ? { kind: 'village', message: 'Rooftops, a barking dog, a road. You made it to the village!' }
-    : { kind: 'explore', message: `You explore on foot for ${minutes} min (${Math.round(moved)} m from where you stopped).` }
+    ? { kind: 'village', message: goalFound(v) }
+    : { kind: spotted.lines.length ? 'clue' : 'explore', message: `You explore on foot for ${minutes} min (${Math.round(moved)} m from where you stopped).${spotted.lines.length ? ' ' + spotted.lines.join(' ') : ''}` }
   return {
     ...s,
     x,
@@ -250,6 +340,7 @@ export function explore(v: Valley, s: RunState, x: number, z: number, hours: num
     energy: Math.max(0, s.energy - hours * 8),
     path: [...s.path, x, z],
     status: won ? 'won' : s.status,
+    marks: won ? addMark(s, 'village', v.village.x, v.village.z) : s.marks,
     log: [...s.log, stop],
   }
 }
@@ -262,20 +353,23 @@ export function climb(v: Valley, s: RunState): { state: RunState; stop: Stop } {
   const rel = (heightAt(v.map, s.x, s.z) - v.map.minHeight) / (v.map.maxHeight - v.map.minHeight)
   const radius = 1500 + rel * 3500
   revealViewshed(v.map, s.fog, s.x, s.z, 15, radius)
+  const spotted = spotClues(v, s, s.x, s.z)
+  s = spotted.state
+  const clueText = spotted.lines.length ? ` ${spotted.lines.join(' ')}` : ''
   const hour = s.hour + 1
-  const state = { ...s, hour, energy: s.energy - 10 }
+  const state = { ...s, hour, energy: s.energy - 10, marks: addMark(s, 'view', s.x, s.z, `Viewpoint (${Math.round(heightAt(v.map, s.x, s.z))} m)`) }
   const view = rel > 0.6 ? 'From this height the land spreads out below you.' : 'Trees and hills block most of the view.'
   // smoke rises high: from a viewpoint you can spot it even when the village itself is hidden
   const dist = Math.hypot(s.x - v.village.x, s.z - v.village.z)
-  if (!s.smelledSmoke && dist < radius + 1000) {
+  if (GOALS[v.goal.kind].smoke && !s.smelledSmoke && dist < radius + 1000) {
     revealViewshed(v.map, s.fog, v.village.x, v.village.z, 30, 150, 0)
     const toward = compassName(bearingTo(s.x, s.z, v.village.x, v.village.z))
-    return withStop({ ...state, smelledSmoke: true }, {
+    return withStop({ ...state, smelledSmoke: true, marks: addMark(state, 'smoke', v.village.x, v.village.z) }, {
       kind: 'smoke',
-      message: `You climb and look around. ${view} Far to the ${toward}, a thin column of smoke rises.`,
+      message: `You climb and look around. ${view} Far to the ${toward}, a thin column of smoke rises.${clueText}`,
     })
   }
-  return withStop(state, { kind: 'climb', message: `You climb and look around. ${view}` })
+  return withStop(state, { kind: spotted.lines.length ? 'clue' : 'climb', message: `You climb and look around. ${view}${clueText}` })
 }
 
 /** Rest 1 h by day, or sleep until morning at night. Running out of days loses the run. */
@@ -292,6 +386,6 @@ export function rest(_v: Valley, s: RunState): { state: RunState; stop: Stop } {
       message: `Day ${day} dawns and nobody is looking for you here any more. You did not make it.`,
     })
   }
-  const state = { ...s, day, hour: DAY_START, energy: Math.min(100, s.energy + 60), health: Math.min(100, s.health + 30) }
+  const state = { ...s, day, hour: DAY_START, marks: addMark(s, 'camp', s.x, s.z, `Night camp, day ${s.day}`), energy: Math.min(100, s.energy + 60), health: Math.min(100, s.health + 30) }
   return withStop(state, { kind: 'sleep', message: `You sleep under the stars. Day ${day}, 07:00. +60 energy${s.health < 100 ? ', +30 health' : ''}.` })
 }

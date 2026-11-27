@@ -1,6 +1,7 @@
 'use client'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useFrame } from '@react-three/fiber'
+import { Vector3 } from 'three/webgpu'
 import { KeyboardControls } from '@react-three/drei'
 import { Physics } from '@react-three/rapier'
 import { createRenderer } from '@/game/render/renderer'
@@ -8,7 +9,7 @@ import { useSettings } from '@/game/state/settings'
 import { runStore } from '@/game/state/run'
 import { SCENE_TIME_SCALE, useJourney } from '@/game/state/journey'
 import { heightAt, sampleTile } from '@/game/core/terrain'
-import { placeDecor, placeVegetation, placeVillage } from '@/game/core/placement'
+import { anchorIn, safeSpawn, placeDecor, placeVegetation, placeVillage } from '@/game/core/placement'
 import { DAYS_ALLOWED, formatHour, HURT } from '@/game/core/travel'
 import type { Point, Valley } from '@/game/core/valley'
 import type { WaterSample } from '@/game/core/rivers'
@@ -20,35 +21,109 @@ import Water from './Water'
 import Daylight, { DaylightFog, SUN_DIR } from './Daylight'
 import PostFX from './PostFX'
 import Village from './Village'
+import { ClueProp, GoalProp } from './Landmarks'
 import Decor, { LOG_HALF, LOG_R } from './Decor'
 
 
-export default function Scene({ valley, center }: { valley: Valley; center: Point }) {
+const PX_PER_DEG = 2.4
+const COMPASS_W = 320
+const POINTS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
+
+/** Writes the camera heading into the compass strip every frame (no re-render, no allocation). */
+function Heading({ target }: { target: React.RefObject<HTMLDivElement | null> }) {
+  const fwd = useMemo(() => new Vector3(), [])
+  useFrame(({ camera }) => {
+    const el = target.current
+    if (!el) return
+    camera.getWorldDirection(fwd)
+    const deg = ((Math.atan2(fwd.x, -fwd.z) * 180) / Math.PI + 360) % 360 // clockwise from north (−z)
+    el.style.transform = `translateX(${COMPASS_W / 2 - (deg + 360) * PX_PER_DEG}px)`
+  })
+  return null
+}
+
+/** Heading strip at the top of the screen; the red mark is the bearing chosen on the map. */
+function Compass({ strip, bearing }: { strip: React.RefObject<HTMLDivElement | null>; bearing: number | null }) {
+  // three turns so the window never runs out while wrapping
+  const ticks = useMemo(() => Array.from({ length: 3 * 24 }, (_, i) => i * 15), [])
+  return (
+    <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2">
+      <div className="relative h-9 overflow-hidden rounded-md border border-white/25 bg-black/45 font-mono text-white shadow" style={{ width: COMPASS_W }}>
+        <div ref={strip} className="absolute left-0 top-0 h-full will-change-transform">
+          {ticks.map((d) => {
+            const a = d % 360
+            const label = a % 45 === 0 ? POINTS[a / 45] : null
+            return (
+              <div key={d} className="absolute top-0 flex h-full flex-col items-center" style={{ left: d * PX_PER_DEG, transform: 'translateX(-50%)' }}>
+                <div className={label ? 'h-2 w-px bg-white' : 'h-1.5 w-px bg-white/50'} />
+                {label && <span className={`text-xs ${a === 0 ? 'font-bold text-red-400' : ''}`}>{label}</span>}
+              </div>
+            )
+          })}
+          {bearing !== null &&
+            [0, 1, 2].map((k) => (
+              <div key={k} className="absolute bottom-0 h-0 w-0 border-x-[6px] border-b-[8px] border-x-transparent border-b-amber-400" style={{ left: (bearing + k * 360) * PX_PER_DEG - 6 }} title="Your bearing" />
+            ))}
+        </div>
+        <div className="absolute left-1/2 top-0 h-full w-0.5 -translate-x-1/2 bg-amber-300/90" />
+      </div>
+      {bearing !== null && <div className="mt-0.5 text-center text-[10px] text-white/80 drop-shadow">▲ your bearing {Math.round(bearing)}°</div>}
+    </div>
+  )
+}
+
+/**
+ * The 3D stop scene. It stays mounted (paused, hidden) while the player only looks at the map, so the tile, the player and
+ * the camera are exactly where they were when they come back; it is rebuilt only after a map walk moves them.
+ */
+export default function Scene({ valley, center, active }: { valley: Valley; center: Point; active: boolean }) {
   const forceWebGL = useSettings((s) => s.forceWebGL)
   const run = useJourney((s) => s.run)
   const leaveScene = useJourney((s) => s.leaveScene)
   const hud = useRef<PlayerHud>({ prompt: null, grip: null, gripBox: null, warmth: null, warmthBox: null })
-  // energy when you arrived; cold water eats into it (runStore.coldLoss, applied when you leave)
-  const [startEnergy] = useState(() => {
+  // one visit = from entering (or coming back from the map) to leaving. Energy, health and hour when it started:
+  // cold water (runStore.coldLoss) and falls (runStore.injury) eat into them, applied when you leave.
+  const [visit, setVisit] = useState(() => ({ enteredAt: performance.now(), energy: run?.energy ?? 100, health: run?.health ?? 100, hour: run?.hour ?? 12 }))
+  const { enteredAt, energy: startEnergy, health: startHealth } = visit
+  const wasActive = useRef(active)
+  useEffect(() => {
+    if (active && !wasActive.current) {
+      const r = useJourney.getState().run
+      setVisit({ enteredAt: performance.now(), energy: r?.energy ?? 100, health: r?.health ?? 100, hour: r?.hour ?? 12 })
+      setElapsed(0)
+    }
+    wasActive.current = active
+  }, [active])
+  useEffect(() => {
+    if (!active) return
     runStore.getState().coldLoss = 0
-    return run?.energy ?? 100
-  })
-  // health when you arrived; falls hurt (runStore.injury, applied when you leave)
-  const [startHealth] = useState(() => {
     runStore.getState().injury = 0
-    return run?.health ?? 100
-  })
-  const [enteredAt] = useState(() => performance.now())
+    runStore.getState().sceneEnteredAt = enteredAt
+    return () => {
+      runStore.getState().sceneEnteredAt = 0
+    }
+  }, [enteredAt, active])
   const [elapsed, setElapsed] = useState(0)
+  const compass = useRef<HTMLDivElement>(null)
+  const bearing = useJourney((s) => s.bearing)
 
   const world = useMemo(() => {
     const terrain = sampleTile(valley.field, center.x, center.z)
+    const vegetation = placeVegetation(terrain, valley.field, valley.seed)
+    // appear where you stood on the map, or the nearest flat, safe ground
+    const run = useJourney.getState().run
+    const at = safeSpawn(terrain, valley.field, vegetation, (run?.x ?? center.x) - center.x, (run?.z ?? center.z) - center.z)
     return {
       terrain,
-      vegetation: placeVegetation(terrain, valley.field, valley.seed),
+      vegetation,
       decor: placeDecor(terrain, valley.field, valley.seed),
-      houses: placeVillage(terrain, valley.field, valley.seed, valley.village.x, valley.village.z),
-      spawn: [0, heightAt(terrain, 0, 0) + 1.5, 0] as [number, number, number],
+      houses: valley.goal.kind === 'village' ? placeVillage(terrain, valley.field, valley.seed, valley.village.x, valley.village.z) : [],
+      goal: valley.goal.kind === 'village' ? null : anchorIn(terrain, valley.goal.x, valley.goal.z, valley.goal.rotation),
+      clues: valley.clues.flatMap((c) => {
+        const at = anchorIn(terrain, c.x, c.z, Math.PI / 2 - (c.bearing * Math.PI) / 180, 5)
+        return at ? [{ kind: c.kind, at }] : []
+      }),
+      spawn: [at.x, heightAt(terrain, at.x, at.z) + 1.2, at.z] as [number, number, number],
     }
   }, [valley, center])
 
@@ -71,13 +146,24 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
   }, [world])
 
   // game clock shown in the HUD (not in the frame loop)
+  // walking up to the goal ends the level
   useEffect(() => {
-    const id = setInterval(() => setElapsed((performance.now() - enteredAt) / 1000), 1000)
+    const gx = valley.village.x - world.terrain.centerX
+    const gz = valley.village.z - world.terrain.centerZ
+    const reach = valley.goal.kind === 'village' ? 60 : 12
+    if (!active) return
+    const id = setInterval(() => {
+      const secs = (performance.now() - enteredAt) / 1000
+      setElapsed(secs)
+      const p = runStore.getState().playerPosition
+      if (Math.hypot(p.x - gx, p.z - gz) < reach) leaveScene(p.x, p.z, secs, false)
+    }, 1000)
     return () => clearInterval(id)
-  }, [enteredAt])
+  }, [enteredAt, valley, world, leaveScene, active])
 
   // M = back to the map (letter by key, not code, so AZERTY works). E (climb / look around) lives in Player.
   useEffect(() => {
+    if (!active) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() !== 'm') return
       const p = runStore.getState().playerPosition
@@ -85,7 +171,7 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [enteredAt, leaveScene])
+  }, [enteredAt, leaveScene, active])
 
   // looking around from a tree top or a rock = the map's "climb" reveal from this spot
   const onLookAround = useCallback(() => {
@@ -160,12 +246,12 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
 
 
   // continuous game hour for the light (read every frame, no re-render)
-  const startHour = run?.hour ?? 12
+  const startHour = visit.hour
   const getHour = useCallback(
     () => (startHour + ((performance.now() - enteredAt) / 1000) * SCENE_TIME_SCALE / 3600) % 24,
     [startHour, enteredAt],
   )
-  const hour = run ? run.hour + (elapsed * SCENE_TIME_SCALE) / 3600 : 0
+  const hour = startHour + (elapsed * SCENE_TIME_SCALE) / 3600
   const t = world.terrain
 
   return (
@@ -176,16 +262,22 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
         dpr={[1, 1.5]}
         shadows="percentage"
         camera={{ fov: 55, near: 0.1, far: 900 }}
+        frameloop={active ? 'always' : 'never'}
       >
+        <Heading target={compass} />
         <color attach="background" args={[HAZE_COOL]} />
         <DaylightFog mistHeight={t.minHeight + (t.maxHeight - t.minHeight) * 0.15} />
         <Daylight getHour={getHour} />
         <Suspense fallback={null}>
-          <Physics timeStep={1 / 60}>
+          <Physics timeStep={1 / 60} paused={!active}>
             <Terrain terrain={t} />
             <Vegetation data={world.vegetation} />
             <Decor data={world.decor} />
             <Village houses={world.houses} />
+            {world.goal && valley.goal.kind !== 'village' && <GoalProp kind={valley.goal.kind} at={world.goal} />}
+            {world.clues.map((c, i) => (
+              <ClueProp key={i} kind={c.kind} at={c.at} />
+            ))}
             <Water field={valley.field} tile={t} />
             <Player
               spawn={world.spawn}
@@ -204,6 +296,7 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
         </Suspense>
         <PostFX />
       </Canvas>
+      <Compass strip={compass} bearing={bearing} />
       <div className="pointer-events-none absolute right-3 top-3 rounded bg-black/50 px-3 py-2 text-right font-mono text-sm text-white">
         {run && (
           <div>

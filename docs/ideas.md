@@ -62,3 +62,5 @@ Code hygiene
 - Wet clothes: stay cold for a while after leaving the water; a fire to warm up.
 - Riverside vegetation (reeds, alders) and pebble beds in shallow streams.
 
+- Levels with their own difficulty (days allowed, village distance, weather) instead of fixed seeds with the same rules.
+- Balance the levels with a bot playthrough (follow clues) instead of by hand; clue placement by visibility (put cairns where a viewpoint sees them).

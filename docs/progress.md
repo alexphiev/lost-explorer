@@ -83,16 +83,34 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] 3D "fallen" mode: control off ~1.5–3 s, trip pose (pitch forward → hands and knees → lie flat → push up) or crumple pose on hard landings, then stand up; message in the prompt with the damage
 - [x] Triggers (running only, > 4.3 m/s): into a trunk (bounce back), small rock (0.15–0.7 m) or stump ahead; across a log (40 % per log); downhill steeper than −0.55 for > 0.35 s; wet stones in a stream (0.5/s); landing > 2 m below where the jump/fall started (−5 − 1.5·(d−2)²)
 
+## Levels, local save, map and menu rework
+- [x] Campaign: 6 fixed valleys (`game/core/levels.ts`), level 1 unlocked, winning a level unlocks the next; `/play?level=N` (`&new=1` restarts), `?seed=` still works as a free valley
+- [x] Real play time per level (ticks while the tab is visible), best time + in-game hours kept per level
+- [x] Local save in localStorage (`game/state/save.ts`): unlocked levels, best times, run in progress per valley (fog packed 2 bits/cell), saved on every action, every 5 s and on page hide; reopening resumes on the map (or back in the 3D scene at the same tile)
+- [x] Map: discovered points of interest (camps, viewpoints, berries, smoke, cliffs, scrub, deep water, village) + seen summits and lakes, hand-drawn symbols, hover tooltips, legend, scale bar; parchment/journal layout with game buttons and key hints; end screen with time, best time, next level
+- [x] Main menu: title, Play/Continue, level cards (locked/done/best time/continue/restart)
+- [x] Each level ends at a sign of civilisation (`game/core/goals.ts`): village, forester's cabin (in the woods, among thorns), boat (on a river bank), shepherds' cave (at a cliff foot), fishing hut (lake shore). Placed on a 3–6 km ring within 75° of where the land drains, reachable on foot; villages show from afar and smoke, the others only once seen up close
+- [x] Clues (`LevelSpec.clues`): laid along a walkable route start → goal (20–78 % of the way, nudged off it), each points to the next, the last to the goal. Found when seen up close (cairns: seen at all, from a viewpoint): the walk stops, journal line with the direction, pinned on the map with an arrow. 3D props (cairn, signpost, blazed tree, fire ring, marked finds) and goal props; walking up to the goal in 3D ends the level
+- [x] Level design: 1 village 3.5–4.3 km, 3 clues · 2 boat 3.8–4.8 km, 3 · 3 cave 4–5 km, 2 cairns + piton · 4 cabin 4.3–5.3 km, 2 · 5 hut 4.3–5.7 km, 2 · 6 village 5.2–6 km, 1
+- [x] Review fixes: small goals finish within 30 m (villages 120 m), small clues/goals found only by passing close (not from a viewpoint's sharp fog), saves while in 3D fold in the live position/time/cold/falls, save on tab hide
+- [x] 3D spawn always on the nearest flat, dry, clear ground to the map position (`safeSpawn`, ≤ 350 m away), and no fall damage during the first 4 s
+- [x] Map ⇄ 3D without losing anything: the scene stays mounted, paused (`frameloop="never"`, physics paused) and hidden behind the map; coming back resumes the same tile, decor, player position and camera. Only a map walk that moves you drops it (rest / climb on the map keep it); energy, health and hour re-sync on each visit
+- [x] 3D compass: heading strip at the top (camera yaw, updated in the frame loop without re-render), amber mark = bearing chosen on the map
+- [ ] Accounts + database (#29), per-level leaderboard (#30)
+
 ## Current task
-None. Rivers done, PR open.
+None. Levels/local save done.
 
 ## Next action
-User feel-test (cross a stream on foot, swim a river, drift, get cold). Then: sounds (steps by ground, water, wind, birds), splash/ripple effects.
+User playtest of the menu, map markers and resume. Then #29/#30 when a database is wanted.
 
 ## Blockers
 None.
 
 ## Decisions (one line each)
+- Local save in localStorage, not a cookie: the fog of war alone is ~22 KB (cookies cap at 4 KB) and nothing needs to reach a server yet.
+- The 3D scene is kept alive behind the map rather than rebuilt: exact position, decor and camera, at the cost of keeping its GPU resources while on the map.
+- Level links are plain `<a>` (full reload): the game store and the WebGPU scene start clean for each level.
 - TypeScript pinned to 5.9.3 (TS 7 is the native port; Next 16 tooling targets 5.x).
 - `leva` installed only because it is a peer dependency of ecctrl 2.
 - No ESLint for now (not in the definition of done).
