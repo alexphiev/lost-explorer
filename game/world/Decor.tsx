@@ -1,5 +1,5 @@
 'use client'
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useRapier } from '@react-three/rapier'
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
@@ -184,6 +184,11 @@ function DecorColliders({ data }: { data: DecorData }) {
   return null
 }
 
+/** Free the GPU resources a component created itself (R3F doesn't dispose constructor args or primitives). */
+function useDisposeOnUnmount(...groups: Record<string, { dispose(): void }>[]) {
+  useEffect(() => () => groups.forEach((g) => Object.values(g).forEach((r) => r.dispose())), groups)
+}
+
 export default function Decor({ data }: { data: DecorData }) {
   const geos = useMemo(makeGeometries, [])
   const mats = useMemo(
@@ -194,6 +199,7 @@ export default function Decor({ data }: { data: DecorData }) {
     }),
     [],
   )
+  useDisposeOnUnmount(geos, mats)
   const redM = useMemo(() => data.mushrooms.filter((it) => it.tint < 0.5), [data])
   const brownM = useMemo(() => data.mushrooms.filter((it) => it.tint >= 0.5), [data])
 

@@ -1,5 +1,5 @@
 'use client'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import * as THREE from 'three/webgpu'
 import { CuboidCollider, HeightfieldCollider, RigidBody } from '@react-three/rapier'
 import { worldRel, type Terrain as TerrainData } from '@/game/core/terrain'
@@ -91,6 +91,9 @@ function buildGeometry(t: TerrainData) {
 export default function Terrain({ terrain }: { terrain: TerrainData }) {
   const material = useMemo(terrainMaterial, [])
   const geometry = useMemo(() => buildGeometry(terrain), [terrain])
+  // the material is passed as a primitive and the geometry as a prop: R3F won't free them for us
+  useEffect(() => () => material.dispose(), [material])
+  useEffect(() => () => geometry.dispose(), [geometry])
 
   // Rapier heightfields are column-major: index = iz + ix * n
   const heights = useMemo(() => {

@@ -1,5 +1,5 @@
 'use client'
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useRapier } from '@react-three/rapier'
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
@@ -134,6 +134,11 @@ const FLOWERS = ['#f4f1e6', '#f1d65a', '#a98fd6', '#d9473a', '#f3b6c8']
 const DRY = new THREE.Color('#d8c477')
 const LUSH = new THREE.Color('#9cc46a')
 
+/** Free the GPU resources a component created itself (R3F doesn't dispose constructor args or primitives). */
+function useDisposeOnUnmount(...groups: Record<string, { dispose(): void }>[]) {
+  useEffect(() => () => groups.forEach((g) => Object.values(g).forEach((r) => r.dispose())), groups)
+}
+
 export default function Vegetation({ data }: { data: VegetationData }) {
   const geos = useMemo(makeGeometries, [])
   const mats = useMemo(
@@ -148,6 +153,7 @@ export default function Vegetation({ data }: { data: VegetationData }) {
     }),
     [],
   )
+  useDisposeOnUnmount(geos, mats)
   const conifers = useRef<THREE.InstancedMesh>(null)
   const broadleafTrunks = useRef<THREE.InstancedMesh>(null)
   const broadleaves = useRef<THREE.InstancedMesh>(null)
