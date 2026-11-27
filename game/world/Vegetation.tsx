@@ -4,7 +4,7 @@ import { useRapier } from '@react-three/rapier'
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { Instance, Vegetation as VegetationData } from '@/game/core/placement'
-import { windMaterial } from '@/game/render/tsl/wind'
+import { bushMaterial, windMaterial } from '@/game/render/tsl/wind'
 import { texturedLambert } from '@/game/render/tsl/surface'
 
 function painted(geo: THREE.BufferGeometry, hex: string, y = 0, x = 0, z = 0) {
@@ -120,10 +120,7 @@ function VegetationColliders({ data }: { data: VegetationData }) {
         body,
       )
     }
-    // scrub is impassable: overlapping wide cylinders
-    for (const it of data.bushes) {
-      world.createCollider(rapier.ColliderDesc.cylinder(1.2 * it.scale, 1.5 * it.scale).setTranslation(it.x, it.y + 1.2 * it.scale - 0.3, it.z), body)
-    }
+    // scrub has no collider: you push through it, slowly (see Player), and it bends away (bushMaterial)
     return () => world.removeRigidBody(body)
   }, [world, rapier, data])
   return null
@@ -149,7 +146,7 @@ export default function Vegetation({ data }: { data: VegetationData }) {
       grass: windMaterial(0.18, 0.6),
       flower: windMaterial(0.12, 0.45),
       rock: texturedLambert(1.8, 2), // grainy stone
-      bush: windMaterial(0.1, 2),
+      bush: bushMaterial(),
     }),
     [],
   )

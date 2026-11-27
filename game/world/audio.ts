@@ -99,9 +99,10 @@ export function createSoundEngine(muted: boolean): SoundEngine {
     },
     setAmbient(water, rushing, w) {
       const t = ctx.currentTime
-      babble.g.gain.setTargetAtTime(water * 0.32, t, 0.4)
-      rush.g.gain.setTargetAtTime(rushing * 0.5, t, 0.5)
-      wind.g.gain.setTargetAtTime(w * 0.22, t, 1.2)
+      // kept low: noise beds tire the ear fast (playtest: −75 %)
+      babble.g.gain.setTargetAtTime(water * 0.08, t, 0.4)
+      rush.g.gain.setTargetAtTime(rushing * 0.12, t, 0.5)
+      wind.g.gain.setTargetAtTime(w * 0.055, t, 1.2)
       // gusts: the band wanders
       wind.f.frequency.setTargetAtTime(260 + Math.random() * 380 * (0.4 + w), t, 1.5)
       babble.f.frequency.setTargetAtTime(1500 + Math.random() * 500, t, 0.3)

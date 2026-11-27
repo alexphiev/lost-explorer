@@ -8,6 +8,7 @@ import * as THREE from 'three/webgpu'
 import { heightAt, slopeAt, type Terrain } from '@/game/core/terrain'
 import { createWaterSample, type WaterSample } from '@/game/core/rivers'
 import { runStore } from '@/game/state/run'
+import { brushPlayer, brushSpeed } from '@/game/render/tsl/wind'
 import { bodyDropFor, footAlongCycle, HIP_Y, solveLeg, solveLimb, createLimbAngles, slopeSpeedFactor, strideLength, THIGH, type FootTarget, type LegAngles } from './gait'
 import { climbPose, createPose, fallPose, mantlePose, scrambleArms, swimPose } from './poses'
 import { HURT } from '@/game/core/travel'
@@ -53,6 +54,7 @@ const GRIP_WALL_ANGLE = (55 * Math.PI) / 180 // grip drains on walls steeper tha
 const CLIMB_EXIT_ANGLE = 0.61 // rad (~35°): ground walkable again
 const SWIM_DEPTH = 1.3 // water deeper than this under you → swim
 const ROOT_TO_FEET = 1.0
+const SCRUB_SPEED = 0.4 // walking speed factor inside thorny scrub
 const COLLIDE_ALL = 0xffffffff // Rapier collision groups: (memberships << 16) | filter
 const COLLIDE_NONE = 0x00010000
 // arm model (see <Arm>): shoulder in the torso group, upper arm to the elbow, forearm to the hand's centre
@@ -222,6 +224,7 @@ export default function Player({
   climbables,
   hazards,
   waterAt,
+  scrubAt,
   streamAt,
   energy,
   health,
@@ -235,6 +238,8 @@ export default function Player({
   hazards: Hazards
   /** water surface height at local (x, z), −Infinity if dry */
   waterAt: (x: number, z: number) => number
+  /** thorny scrub at tile-local (x, z): passable, but slow */
+  scrubAt: (x: number, z: number) => boolean
   /** stream / river at local (x, z): fills `out` with its current */
   streamAt: (x: number, z: number, out: WaterSample) => boolean
   /** energy when the scene started (cold water drains it, see runStore.coldLoss) */
@@ -430,6 +435,9 @@ export default function Player({
     store.x = P.x
     store.y = P.y
     store.z = P.z
+    // bushes bend away from the body and shake with the pace
+    brushPlayer.value.set(P.x, P.y - ROOT_TO_FEET, P.z)
+    brushSpeed.value = runStore.getState().audio.speed
     const aud = runStore.getState().audio
     aud.mode = g.mode === 'ground' ? 0 : g.mode === 'climb' ? 1 : g.mode === 'swim' ? 2 : 3
     aud.phase = g.phase % 1
@@ -879,7 +887,10 @@ export default function Player({
       // −b·v with b = k·(1/f − 1) (k = that same gain) settles the speed at exactly f · vmax
       // (b < 0 is a push, for the faster descents).
       const hurtF = hp <= 0 ? 0.55 : hurt ? 0.75 : 1 // limping
-      g.slopeF = damp(g.slopeF, slopeSpeedFactor(grade) * (1 - 0.5 * wade) * hurtF, 4, dt)
+      // thorny scrub: you can push through it, at a crawl
+      const inScrub = scrubAt(P.x, P.z)
+      if (inScrub && !prompt) prompt = 'Pushing through thorny scrub'
+      g.slopeF = damp(g.slopeF, slopeSpeedFactor(grade) * (1 - 0.5 * wade) * hurtF * (inScrub ? SCRUB_SPEED : 1), 4, dt)
       if (wade > 0.15) {
         // cold feet, and the current pushes the deeper you stand in it
         run.coldLoss += rawDt * COLD_WADE * wade
