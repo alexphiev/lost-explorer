@@ -1,59 +1,118 @@
 'use client'
 
 import { useEffect, useMemo } from 'react'
-import { BufferAttribute, BufferGeometry, DoubleSide, MeshStandardNodeMaterial } from 'three/webgpu'
-import { attribute, color, dot, float, mix, mx_noise_float, normalView, normalize, positionViewDirection, positionWorld, sin, smoothstep, time, vec3 } from 'three/tsl'
+import { useFrame } from '@react-three/fiber'
+import { BufferAttribute, BufferGeometry, DoubleSide, MeshStandardNodeMaterial, Vector3 } from 'three/webgpu'
+import {
+  attribute,
+  color,
+  cos,
+  dot,
+  exp,
+  float,
+  mix,
+  mx_noise_float,
+  normalView,
+  normalize,
+  modelWorldMatrix,
+  positionGeometry,
+  positionLocal,
+  positionViewDirection,
+  sin,
+  smoothstep,
+  time,
+  uniform,
+  vec2,
+  vec3,
+  vec4,
+} from 'three/tsl'
 import type { HeightField } from '@/game/core/terrain'
 import type { Terrain } from '@/game/core/terrain'
+import { heightAt } from '@/game/core/terrain'
 import { RIBBON_MARGIN } from '@/game/core/rivers'
+import { runStore } from '@/game/state/run'
 
 export function waterLevelAt(field: HeightField, tile: Terrain, localX: number, localZ: number): number {
   return field.water(localX + tile.centerX, localZ + tile.centerZ)
 }
 
-/** Still water (lakes, ponds) or, with `flowing`, streams: ripples drift with the per-vertex current, foam where it runs fast. */
-function makeWaterMaterial(flowing: boolean) {
+/** Shared by every water surface: where the player is in the water, and how hard they stir it (0..1). */
+const wakeAt = uniform(new Vector3(0, -1000, 0))
+const wakeStrength = uniform(0)
+
+/**
+ * Still water (lakes, ponds) or, with `flowing`, streams: deep blue, rolling waves, ripples that drift with the current,
+ * foam where it runs fast, and rings spreading from the player when they wade or swim.
+ * `up` = the local axis that points up (lakes are discs lying in their XY plane).
+ */
+function makeWaterMaterial(flowing: boolean, up: 'y' | 'z') {
   const m = new MeshStandardNodeMaterial()
   m.transparent = true
   m.depthWrite = false
   m.side = DoubleSide
-  m.roughness = 0.12
-  m.metalness = 0
+  m.roughness = 0.08
+  m.metalness = 0.05
 
   const t = time
   const current = flowing ? attribute('flow', 'vec2') : null
+  // world position of the undisplaced vertex (positionWorld would loop back through positionNode)
+  const world = modelWorldMatrix.mul(vec4(positionGeometry, 1)).xz
   // ripples ride the current
-  const p = current ? positionWorld.xz.sub(current.mul(t)) : positionWorld.xz
+  const p = current ? world.sub(current.mul(t)) : world
   const speed = current ? current.length() : float(0)
-  const rx = sin(p.x.mul(0.35).add(t.mul(0.8))).mul(0.5).add(sin(p.y.mul(0.9).add(p.x.mul(0.4)).sub(t.mul(1.3))).mul(0.3))
-  const rz = sin(p.y.mul(0.4).sub(t.mul(0.7))).mul(0.5).add(sin(p.x.mul(1.1).sub(p.y.mul(0.5)).add(t.mul(1.1))).mul(0.3))
-  // running water is choppier
-  m.normalNode = normalize(normalView.add(vec3(rx, 0, rz).mul(speed.mul(0.12).add(0.06))))
 
+  // rolling waves: two crossing swells + noise, choppier on running water
+  const swell = sin(p.x.mul(0.22).add(p.y.mul(0.13)).add(t.mul(1.1)))
+    .mul(0.5)
+    .add(sin(p.y.mul(0.31).sub(p.x.mul(0.07)).sub(t.mul(1.4))).mul(0.35))
+    .add(mx_noise_float(vec3(p.x.mul(0.18), p.y.mul(0.18), t.mul(0.35))).mul(0.4))
+  const amp = speed.mul(0.05).add(0.06)
+
+  // the player's wake: rings spreading out, fading with distance
+  const off = world.sub(wakeAt.xz)
+  const d = off.length().add(0.001)
+  const fade = exp(d.mul(-0.45)).mul(wakeStrength)
+  const rings = sin(d.mul(3.2).sub(t.mul(7))).mul(fade)
+  const height = swell.mul(amp).add(rings.mul(0.07))
+  m.positionNode = up === 'y' ? positionLocal.add(vec3(0, height, 0)) : positionLocal.add(vec3(0, 0, height))
+
+  // slopes of the waves for lighting
+  const gx = cos(p.x.mul(0.22).add(p.y.mul(0.13)).add(t.mul(1.1))).mul(0.11).add(sin(p.y.mul(0.9).add(p.x.mul(0.4)).sub(t.mul(1.3))).mul(0.25))
+  const gz = cos(p.y.mul(0.31).sub(p.x.mul(0.07)).sub(t.mul(1.4))).mul(0.11).add(sin(p.x.mul(1.1).sub(p.y.mul(0.5)).add(t.mul(1.1))).mul(0.25))
+  const ringSlope = cos(d.mul(3.2).sub(t.mul(7))).mul(fade).mul(0.6)
+  const tilt = vec2(gx, gz).mul(speed.mul(0.25).add(0.35)).add(off.div(d).mul(ringSlope))
+  m.normalNode = normalize(normalView.add(vec3(tilt.x, 0, tilt.y).mul(0.35)))
+
+  // colour: deep blue looking down, sky-tinted at grazing angles, light crests
   const fres = float(1).sub(dot(normalView, positionViewDirection).abs()).clamp(0, 1)
-  const base = mix(color(0x1f4f5c), color(0x4f8c88), fres)
-  let col = mix(base, color(0xb9d3dc), fres.pow(3).mul(0.6))
+  const base = mix(color(0x0f3f63), color(0x2e7fa6), fres.pow(1.5))
+  let col = mix(base, color(0xbfdcea), fres.pow(4).mul(0.55))
+  col = mix(col, color(0x5fa6c4), smoothstep(0.55, 1, swell).mul(0.25))
+  // churned water around the player
+  const churn = smoothstep(1.6, 0.2, d).mul(wakeStrength)
+  col = mix(col, color(0xe6f2f4), churn.mul(0.45))
+  let alpha = mix(float(0.9), float(0.98), fres)
   if (current) {
     // white water where the stream runs fast (riffles, rapids)
     const n = mx_noise_float(vec3(p.x.mul(0.45), p.y.mul(0.45), t.mul(0.6)))
     const foam = smoothstep(0.15, 0.55, n).mul(speed.sub(0.55).clamp(0, 1))
-    col = mix(col, color(0xe8f0ee), foam.mul(0.65))
-    m.opacityNode = mix(float(0.72), float(0.92), fres).add(foam.mul(0.2)).clamp(0, 1)
-  } else {
-    m.opacityNode = mix(float(0.82), float(0.95), fres)
+    col = mix(col, color(0xeef5f4), foam.mul(0.7))
+    alpha = alpha.add(foam.mul(0.1))
   }
   m.colorNode = col
+  m.opacityNode = alpha.add(churn.mul(0.05)).clamp(0, 1)
   return m
 }
 
-/** Water ribbons along the streams and rivers of the tile (local coordinates). */
+/** Water ribbons along the streams and rivers of the tile (local coordinates), cut every few metres so the waves can roll. */
 function buildStreams(field: HeightField, tile: Terrain) {
   const half = tile.size / 2
   const pos: number[] = []
   const flow: number[] = []
   const idx: number[] = []
+  const ACROSS = 4 // vertices across the ribbon − 1
   for (const r of field.rivers.near(tile.centerX, tile.centerZ, half + 50)) {
-    let prev = -1 // vertex index of the previous node's left edge, −1 at the start of a run
+    let prev = -1 // first vertex index of the previous node's row, −1 at the start of a run
     const inLake = Array.from({ length: r.n }, (_, i) => field.lake(r.x[i], r.z[i]) > -Infinity)
     for (let i = 0; i < r.n; i++) {
       const x = r.x[i] - tile.centerX
@@ -69,11 +128,14 @@ function buildStreams(field: HeightField, tile: Terrain) {
       const pz = r.dx[i] * w
       const v = pos.length / 3
       const y = r.level[i] + 0.03
-      pos.push(x + px, y, z + pz, x - px, y, z - pz)
       const fx = r.dx[i] * r.speed[i]
       const fz = r.dz[i] * r.speed[i]
-      flow.push(fx, fz, fx, fz)
-      if (prev >= 0) idx.push(prev, prev + 1, v, prev + 1, v + 1, v)
+      for (let k = 0; k <= ACROSS; k++) {
+        const s = 1 - (2 * k) / ACROSS
+        pos.push(x + px * s, y, z + pz * s)
+        flow.push(fx, fz)
+      }
+      if (prev >= 0) for (let k = 0; k < ACROSS; k++) idx.push(prev + k, prev + k + 1, v + k, prev + k + 1, v + k + 1, v + k)
       prev = v
     }
   }
@@ -86,10 +148,11 @@ function buildStreams(field: HeightField, tile: Terrain) {
 }
 
 export default function Water({ field, tile }: { field: HeightField; tile: Terrain }) {
-  const still = useMemo(() => makeWaterMaterial(false), [])
-  const running = useMemo(() => makeWaterMaterial(true), [])
+  const still = useMemo(() => makeWaterMaterial(false, 'z'), [])
+  const running = useMemo(() => makeWaterMaterial(true, 'y'), [])
   const lakes = useMemo(() => field.lakesNear(tile.centerX, tile.centerZ, 800), [field, tile])
   const streams = useMemo(() => buildStreams(field, tile), [field, tile])
+  const last = useMemo(() => ({ x: 0, z: 0, stir: 0 }), [])
   useEffect(
     () => () => {
       streams.dispose()
@@ -103,6 +166,23 @@ export default function Water({ field, tile }: { field: HeightField; tile: Terra
     },
     [still, running],
   )
+
+  // the wake follows the player while they are in the water, stronger the faster they move
+  useFrame((_, rawDt) => {
+    const dt = Math.min(rawDt, 0.05)
+    const p = runStore.getState().playerPosition
+    const level = field.water(p.x + tile.centerX, p.z + tile.centerZ)
+    const ground = heightAt(tile, p.x, p.z)
+    const inWater = level > ground + 0.05 && p.y - 1 < level
+    const moved = dt > 0 ? Math.hypot(p.x - last.x, p.z - last.z) / dt : 0
+    last.x = p.x
+    last.z = p.z
+    const target = inWater ? Math.min(1, 0.35 + moved * 0.3) : 0
+    last.stir += (target - last.stir) * Math.min(1, dt * 3)
+    wakeStrength.value = last.stir
+    if (inWater) wakeAt.value.set(p.x, level, p.z)
+  })
+
   return (
     <>
       {lakes.map((l, i) => (
@@ -113,7 +193,8 @@ export default function Water({ field, tile }: { field: HeightField; tile: Terra
           rotation={[-Math.PI / 2, 0, 0]}
           receiveShadow
         >
-          <circleGeometry args={[l.radius + 1.5, 48]} />
+          {/* rings of vertices so the swell can move the surface */}
+          <ringGeometry args={[0, l.radius + 1.5, 64, Math.max(8, Math.round(l.radius / 4))]} />
         </mesh>
       ))}
       <mesh geometry={streams} material={running} receiveShadow />

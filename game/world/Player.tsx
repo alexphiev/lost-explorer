@@ -5,7 +5,7 @@ import { useKeyboardControls } from '@react-three/drei'
 import { Ecctrl, type EcctrlHandle } from 'ecctrl'
 import { EcctrlCameraControls, type EcctrlCameraControlsHandle } from 'ecctrl/camera'
 import * as THREE from 'three/webgpu'
-import { heightAt, type Terrain } from '@/game/core/terrain'
+import { heightAt, slopeAt, type Terrain } from '@/game/core/terrain'
 import { createWaterSample, type WaterSample } from '@/game/core/rivers'
 import { runStore } from '@/game/state/run'
 import { bodyDropFor, footAlongCycle, HIP_Y, solveLeg, solveLimb, createLimbAngles, slopeSpeedFactor, strideLength, THIGH, type FootTarget, type LegAngles } from './gait'
@@ -430,6 +430,9 @@ export default function Player({
     store.x = P.x
     store.y = P.y
     store.z = P.z
+    const aud = runStore.getState().audio
+    aud.mode = g.mode === 'ground' ? 0 : g.mode === 'climb' ? 1 : g.mode === 'swim' ? 2 : 3
+    aud.phase = g.phase % 1
 
     // position-following gain: never overshoot, even when a slow frame runs several physics steps
     const gain = Math.min(10, 0.8 / Math.max(rawDt, 1e-3))
@@ -811,6 +814,7 @@ export default function Player({
       else if (strength < 20) prompt = 'Freezing: your strokes weaken'
       else if (g.coldTime < 6) prompt = flowSpeed > 0.4 ? 'Cold water saps your energy  ·  stop swimming to drift with the current' : 'Cold water saps your energy'
       g.phase += sp > 0.1 ? (sp * dt) / 1.8 : dt * 0.4
+      run.audio.speed = sp
       g.grip = Math.min(1, g.grip + dt * 0.1)
     }
 
@@ -920,6 +924,11 @@ export default function Player({
       const duty = 0.62 - 0.27 * runBlend
       const stride = strideLength(speed, grade) * (1 - 0.3 * wade)
       if (grounded) g.phase = (g.phase + (speed * dt) / stride) % 1
+      const aud = run.audio
+      aud.speed = speed
+      aud.grounded = grounded
+      aud.wade = wade
+      aud.rock = (grounded && e!.standPoint.y > hC + 0.2) || slopeAt(terrain, P.x, P.z) > 0.55
       g.amp = damp(g.amp, grounded ? clamp(speed / 0.5, 0, 1) : 0, 8, dt)
       const lift = (0.09 + 0.07 * runBlend + 0.04 * Math.max(0, grade) + 0.25 * wade) * g.amp
       const groundY = grounded ? e!.standPoint.y : hC

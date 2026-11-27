@@ -64,3 +64,4 @@ Code hygiene
 
 - Levels with their own difficulty (days allowed, village distance, weather) instead of fixed seeds with the same rules.
 - Balance the levels with a bot playthrough (follow clues) instead of by hand; clue placement by visibility (put cairns where a viewpoint sees them).
+- Sound: real recorded samples (steps, water, birds) instead of synthesis; reverb in valleys; distant thunder with weather.
