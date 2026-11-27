@@ -33,6 +33,7 @@ const smooth = (a: number, b: number, v: number) => {
  */
 function scatter(
   t: Terrain,
+  water: (x: number, z: number) => number,
   seed: string,
   name: string,
   perChunk: number,
@@ -64,6 +65,7 @@ function scatter(
         if (Math.abs(x) > half || Math.abs(z) > half) continue
         if (x * x + z * z < clear * clear) continue
         const y = heightAt(t, x, z)
+        if (water(wx, wz) > y - 0.1) continue // nothing grows under water
         site.h = worldRel(y)
         site.slope = slopeAt(t, x, z)
         site.moisture = moistureAt(t, x, z)
@@ -112,17 +114,21 @@ export interface Vegetation {
 export function placeVegetation(t: Terrain, field: HeightField, seed: string): Vegetation {
   return {
     // conifers: mid/high slopes, wetter
-    conifers: scatter(t, seed, 'conifers', 160, (s) =>
+    conifers: scatter(t, field.water, seed, 'conifers', 160, (s) =>
       s.slope > 0.6 ? 0 : 0.15 + 0.85 * smooth(0.2, 0.45, s.h) * (0.4 + 0.6 * s.moisture) * (1 - smooth(0.85, 0.95, s.h)),
     0.7, 1.5),
     // broadleaves: low valleys and meadow edges
-    broadleaves: scatter(t, seed, 'broadleaves', 90, (s) =>
+    broadleaves: scatter(t, field.water, seed, 'broadleaves', 90, (s) =>
       s.slope > 0.5 ? 0 : (1 - smooth(0.3, 0.55, s.h)) * (0.3 + 0.7 * s.moisture),
     0.8, 1.4),
-    rocks: scatter(t, seed, 'rocks', 60, (s) => (s.slope > 0.9 ? 0 : 0.3 + smooth(0.2, 0.6, s.slope) + smooth(0.6, 0.9, s.h)), 0.4, 2.2),
+    rocks: [
+      ...scatter(t, field.water, seed, 'rocks', 60, (s) => (s.slope > 0.9 ? 0 : 0.3 + smooth(0.2, 0.6, s.slope) + smooth(0.6, 0.9, s.h)), 0.4, 2.2),
+      // boulders worth climbing (2–4 m), more on slopes and high ground
+      ...scatter(t, field.water, seed, 'boulders', 8, (s) => (s.slope > 0.8 ? 0 : 0.25 + 0.5 * smooth(0.15, 0.5, s.slope) + 0.4 * smooth(0.4, 0.8, s.h)), 2.6, 4.6),
+    ],
     // grass tufts and flowers: flat-ish meadows
-    grass: scatter(t, seed, 'grass', 1400, (s) => (s.slope > 0.45 ? 0 : 1 - smooth(0.55, 0.8, s.h)), 0.6, 1.4, 1.5),
-    flowers: scatter(t, seed, 'flowers', 500, (s) =>
+    grass: scatter(t, field.water, seed, 'grass', 1400, (s) => (s.slope > 0.45 ? 0 : 1 - smooth(0.55, 0.8, s.h)), 0.6, 1.4, 1.5),
+    flowers: scatter(t, field.water, seed, 'flowers', 500, (s) =>
       s.slope > 0.35 ? 0 : (1 - smooth(0.3, 0.55, s.h)) * (0.3 + 0.7 * (1 - Math.abs(s.moisture - 0.5) * 2)), 0.6, 1.2, 2),
     bushes: scrubBushes(t, field, seed, 9000),
   }

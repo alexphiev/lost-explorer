@@ -1,3 +1,4 @@
+// Superseded by Daylight.tsx (not used by Scene any more).
 'use client'
 import { useMemo } from 'react'
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js'
