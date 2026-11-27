@@ -116,10 +116,10 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] 3 (#37) Living map: every 0.5 s on foot `observe` clears the fog by line of sight from the eye (400–700 m by day + up to 300 m when high up, e.g. on a tree; 150 m at night), draws the trail every 20 m and finds clues on the spot (toast "Clue · pinned on your map" + journal); E on a tree/rock top still gives the big viewpoint reveal; the map is a paused overlay (M)
 - [x] 4 (#38) Camp: C pitches a camp on firm, dry, not-too-steep ground (`game/core/camp.ts`): quality from shelter (trees/big rock within 8 m), fire (≥ 2 trees within 25 m), exposure (6 m above the land 60 m around), damp (water within 20 m / soaked ground), slope; tent + flickering fire; within 12 m: R rest 1 h, L sleep until 07:00 (from 19:00), C pack up; walking 30 m away packs up; recovery × (0.3 + 0.7 q), a bad spot (q < 0.45) costs health overnight; the fire cancels the night cold (no fire: half); falls ×3 likelier in the dark
 - [x] 5 (#39) Night clues of light: goals glow at night (village windows, cabin/hut lamp, boat lantern, cave fire: `NightGlow`, unfogged, constant on-screen size) and are pinned as "a light in the dark" when in line of sight within 1.4 km; night-only clues `lantern` and `embers` (seen from 900 m in line of sight) and `fireflies` (by a stream, up close); North Star always due north at night; levels 2 (fireflies), 5 (lantern), 6 (embers)
-- [ ] 6 (#40) Levels at the new scale
+- [x] 6 (#40) Levels at the new scale (first pass): goals 600–1250 m, main valley 0.5–1 km (done in task 1); berry bushes to eat (~300 per world, +20 energy, eaten on the way, pinned, saved); a tall dead tree on every summit as a landmark to aim for; night clues in levels 2, 5, 6. **Not balanced by playtest yet**: the 30-minute target needs a real run per level
 
 ## Current task
-Redesign task 6 (#40). Tasks 1–4 in PR #41; 5–6 on `claude/adoring-keller-yem4el-night`.
+None. Redesign tasks 1–4 in PR #41, 5–6 in the follow-up PR; waiting for playtest.
 
 ## Next action
 Continue the redesign tasks in order; one PR when the new loop is playable.

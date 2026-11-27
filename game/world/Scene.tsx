@@ -9,8 +9,8 @@ import { useSettings } from '@/game/state/settings'
 import { runStore } from '@/game/state/run'
 import { SCENE_TIME_SCALE, useJourney } from '@/game/state/journey'
 import { heightAt, sampleWorld } from '@/game/core/terrain'
-import { anchorIn, placeDecor, placeGround, placeVegetation, placeVillage, safeSpawn } from '@/game/core/placement'
-import { DAY_START, DAYS_ALLOWED, formatHour, HURT, LIMIT_HOURS, NIGHTFALL, TIME_SCALE } from '@/game/core/travel'
+import { anchorIn, placeBerries, placeDecor, placeGround, placeVegetation, placeVillage, safeSpawn } from '@/game/core/placement'
+import { BERRY_ENERGY, DAY_START, DAYS_ALLOWED, formatHour, HURT, LIMIT_HOURS, NIGHTFALL, TIME_SCALE } from '@/game/core/travel'
 
 /** Energy lost per game hour to the night cold away from a camp's fire, and health lost per game hour with no energy left. */
 const NIGHT_COLD = 4
@@ -28,7 +28,7 @@ import SoundScape from './SoundScape'
 import Daylight, { DaylightFog, SUN_DIR } from './Daylight'
 import PostFX from './PostFX'
 import Village from './Village'
-import { CampProp, ClueProp, GoalProp, NorthStar } from './Landmarks'
+import { BerryBushes, CampProp, ClueProp, GoalProp, NorthStar, SummitTree } from './Landmarks'
 import { campSpot, campVerdict } from '@/game/core/camp'
 import Decor, { LOG_HALF, LOG_R } from './Decor'
 
@@ -131,6 +131,11 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
     return {
       terrain,
       vegetation,
+      berries: placeBerries(terrain, valley.field, valley.seed),
+      // a tall dead tree on every summit in the world: landmarks to aim for
+      summits: valley.landmarks
+        .filter((l) => l.kind === 'peak' && Math.abs(l.x) < terrain.size / 2 - 20 && Math.abs(l.z) < terrain.size / 2 - 20)
+        .map((l) => ({ x: l.x - terrain.centerX, y: heightAt(terrain, l.x - terrain.centerX, l.z - terrain.centerZ), z: l.z - terrain.centerZ })),
       houses: valley.goal.kind === 'village' ? placeVillage(terrain, valley.field, valley.seed, valley.village.x, valley.village.z) : [],
       goal: valley.goal.kind === 'village' ? null : anchorIn(terrain, valley.goal.x, valley.goal.z, valley.goal.rotation),
       clues: valley.clues.flatMap((c) => {
@@ -213,6 +218,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
 
   // what you see: the map fills in as you go (every 0.5 s, not in the frame loop), clues are found on the spot
   const observe = useJourney((s) => s.observe)
+  const eat = useJourney((s) => s.eat)
   const [toast, setToast] = useState<string | null>(null)
   // messages fade after a few seconds
   useEffect(() => {
@@ -228,6 +234,14 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
       const above = Math.max(0, p.y - 1 - heightAt(world.terrain, p.x, p.z))
       const h = (visit.hour + ((performance.now() - visit.enteredAt) / 1000) * TIME_SCALE / 3600) % 24
       const lines = observe(p.x, p.z, 1.7 + above, h >= NIGHTFALL || h < DAY_START, h)
+      // berries within reach are eaten on the way
+      const eaten = useJourney.getState().run?.eaten ?? []
+      world.berries.forEach((b, i) => {
+        if (!eaten.includes(i) && Math.hypot(b.x - p.x, b.z - p.z) < 2.2) {
+          eat(i, b.x, b.z)
+          setToast(`A bush heavy with berries: +${BERRY_ENERGY} energy.`)
+        }
+      })
       if (lines.length) {
         setToast(`Clue, pinned on your map: ${lines.join(' ')}`)
         toastUntil = performance.now() + 9000
@@ -237,7 +251,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
       }
     }, 500)
     return () => window.clearInterval(id)
-  }, [active, observe, world, visit])
+  }, [active, observe, eat, world, visit])
 
   // the camp: C pitch / pack up, R rest an hour, L sleep until dawn (time skips; what the scene spent is settled first)
   const camp = run?.camp ?? null
@@ -420,6 +434,10 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
             <Village houses={world.houses} />
             {world.goal && valley.goal.kind !== 'village' && <GoalProp kind={valley.goal.kind} at={world.goal} />}
             <NorthStar />
+            <BerryBushes bushes={world.berries} eaten={run?.eaten ?? []} />
+            {world.summits.map((p, i) => (
+              <SummitTree key={i} x={p.x} y={p.y} z={p.z} />
+            ))}
             {camp && <CampProp at={{ x: camp.x - world.terrain.centerX, y: heightAt(world.terrain, camp.x - world.terrain.centerX, camp.z - world.terrain.centerZ), z: camp.z - world.terrain.centerZ, rotation: 0 }} fire={camp.fire} />}
             {world.clues.map((c, i) => (
               <ClueProp key={i} kind={c.kind} at={c.at} />
@@ -465,7 +483,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
           <div>
             Day {Math.min(DAYS_ALLOWED + 1, visit.day + Math.floor(hour / 24))}/{DAYS_ALLOWED} · {formatHour(hour % 24)} {hour % 24 >= NIGHTFALL || hour % 24 < DAY_START ? '☾' : '☀'} · {Math.max(0, Math.round(LIMIT_HOURS - ((visit.day - 1) * 24 + hour - 8)))} h left
             <br />
-            <span className={liveEnergy < 20 ? 'text-amber-300' : ''}>energy {Math.max(0, Math.round(liveEnergy))}</span> ·{' '}
+            <span className={liveEnergy < 20 ? 'text-amber-300' : ''}>energy {Math.min(100, Math.max(0, Math.round(liveEnergy)))}</span> ·{' '}
             <span className={liveHealth < HURT ? 'text-red-400' : ''}>health {Math.max(0, Math.round(liveHealth))}</span>
             {forceWebGL && <span className="ml-2 text-amber-300">(WebGL)</span>}
           </div>

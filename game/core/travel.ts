@@ -108,6 +108,8 @@ export interface RunState {
   found: number[]
   /** passed close to a small goal (cabin, boat…): it shows on the map */
   goalSeen?: boolean
+  /** berry bushes already eaten (indices into the scene's berry list) */
+  eaten?: number[]
   /** saw the goal's light at night */
   lightSeen?: boolean
   /** the camp you set up (world position), until you pack it up */
@@ -506,4 +508,16 @@ export function observe(v: Valley, s: RunState, x: number, z: number, eye: numbe
   if (!spotted.lines.length) return { state: spotted.state === s ? s : spotted.state, lines: [] }
   const stop: Stop = { kind: 'clue', message: spotted.lines.join(' ') }
   return { state: { ...spotted.state, log: [...spotted.state.log, stop] }, lines: spotted.lines }
+}
+
+export const BERRY_ENERGY = 20
+
+/** Ate the berries of bush `i` at world (x, z): pin it, note it (the energy itself goes through the scene). */
+export function eatBerries(s: RunState, i: number, x: number, z: number): RunState {
+  return {
+    ...s,
+    eaten: [...(s.eaten ?? []), i],
+    marks: addMark(s, 'berries', x, z),
+    log: [...s.log, { kind: 'berries', message: `You find a bush heavy with berries. +${BERRY_ENERGY} energy.` }],
+  }
 }

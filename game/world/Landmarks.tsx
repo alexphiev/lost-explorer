@@ -1,6 +1,8 @@
 'use client'
 import { useEffect, useMemo, useRef } from 'react'
 import { runStore } from '@/game/state/run'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import type { Instance } from '@/game/core/placement'
 import * as THREE from 'three/webgpu'
 import { useFrame } from '@react-three/fiber'
 import { CuboidCollider, CylinderCollider, RigidBody } from '@react-three/rapier'
@@ -346,5 +348,75 @@ export function NorthStar() {
     <mesh ref={ball} material={mat} visible={false} frustumCulled={false}>
       <sphereGeometry args={[3.2, 8, 6]} />
     </mesh>
+  )
+}
+
+/** Berry bushes: leafy blobs, with red berries until you eat them. */
+export function BerryBushes({ bushes, eaten }: { bushes: Instance[]; eaten: number[] }) {
+  const leaves = useRef<THREE.InstancedMesh>(null)
+  const berries = useRef<THREE.InstancedMesh>(null)
+  const full = useMemo(() => bushes.filter((_, i) => !eaten.includes(i)), [bushes, eaten])
+  useEffect(() => {
+    const m = new THREE.Matrix4()
+    const q = new THREE.Quaternion()
+    const v = new THREE.Vector3()
+    const s = new THREE.Vector3()
+    bushes.forEach((b, i) => {
+      leaves.current?.setMatrixAt(i, m.compose(v.set(b.x, b.y + 0.45 * b.scale, b.z), q, s.set(1.1 * b.scale, 0.8 * b.scale, 1.1 * b.scale)))
+    })
+    full.forEach((b, i) => {
+      berries.current?.setMatrixAt(i, m.compose(v.set(b.x, b.y + 0.55 * b.scale, b.z), q, s.setScalar(b.scale)))
+    })
+    if (leaves.current) leaves.current.instanceMatrix.needsUpdate = true
+    if (berries.current) berries.current.instanceMatrix.needsUpdate = true
+  }, [bushes, full])
+  const berryGeo = useMemo(() => {
+    // a cluster of red dots on the bush surface
+    const parts: THREE.BufferGeometry[] = []
+    for (let k = 0; k < 9; k++) {
+      const a = k * 2.4
+      const y = Math.sin(k * 1.7) * 0.3
+      const r = Math.sqrt(1 - y * y) * 1.05
+      parts.push(new THREE.SphereGeometry(0.09, 5, 4).translate(Math.cos(a) * r, y, Math.sin(a) * r))
+    }
+    return mergeGeometries(parts)
+  }, [])
+  useEffect(() => () => berryGeo.dispose(), [berryGeo])
+  if (bushes.length === 0) return null
+  return (
+    <>
+      <instancedMesh ref={leaves} args={[undefined, undefined, bushes.length]} castShadow receiveShadow>
+        <icosahedronGeometry args={[1, 0]} />
+        <meshLambertMaterial color="#3f6b2e" flatShading />
+      </instancedMesh>
+      {full.length > 0 && (
+        <instancedMesh key={full.length} ref={berries} args={[berryGeo, undefined, full.length]}>
+          <meshLambertMaterial color="#c0213a" />
+        </instancedMesh>
+      )}
+    </>
+  )
+}
+
+/** A tall dead tree on a summit: something to aim for from far away. */
+export function SummitTree({ x, y, z }: { x: number; y: number; z: number }) {
+  return (
+    <group position={[x, y - 0.5, z]}>
+      <mesh position={[0, 7, 0]} castShadow>
+        <cylinderGeometry args={[0.25, 0.55, 14, 6]} />
+        <meshLambertMaterial color="#5b5047" flatShading />
+      </mesh>
+      {[
+        [9, 0.9, 1.1],
+        [11, -1.0, 2.3],
+        [12.5, 0.7, 4.1],
+      ].map(([h, tilt, yaw], i) => (
+        <mesh key={i} position={[0, h, 0]} rotation={[0, yaw, tilt]} castShadow>
+          <cylinderGeometry args={[0.08, 0.15, 3.2, 4]} />
+          <meshLambertMaterial color="#5b5047" />
+        </mesh>
+      ))}
+      <CylinderCollider args={[7, 0.45]} position={[0, 7, 0]} />
+    </group>
   )
 }
