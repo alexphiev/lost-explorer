@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { BufferAttribute, BufferGeometry, DoubleSide, MeshStandardNodeMaterial, Vector3 } from 'three/webgpu'
+import { BufferAttribute, BufferGeometry, DoubleSide, MeshStandardNodeMaterial, RingGeometry, Vector3 } from 'three/webgpu'
 import {
   attribute,
   color,
@@ -50,8 +50,8 @@ function makeWaterMaterial(flowing: boolean, up: 'y' | 'z') {
   m.transparent = true
   m.depthWrite = false
   m.side = DoubleSide
-  m.roughness = 0.08
-  m.metalness = 0.05
+  m.roughness = 0.25
+  m.metalness = 0
 
   const t = time
   const current = flowing ? attribute('flow', 'vec2') : null
@@ -71,9 +71,9 @@ function makeWaterMaterial(flowing: boolean, up: 'y' | 'z') {
   // the player's wake: rings spreading out, fading with distance
   const off = world.sub(wakeAt.xz)
   const d = off.length().add(0.001)
-  const fade = exp(d.mul(-0.45)).mul(wakeStrength)
+  const fade = exp(d.mul(-0.3)).mul(wakeStrength)
   const rings = sin(d.mul(3.2).sub(t.mul(7))).mul(fade)
-  const height = swell.mul(amp).add(rings.mul(0.07))
+  const height = swell.mul(amp).add(rings.mul(0.12))
   m.positionNode = up === 'y' ? positionLocal.add(vec3(0, height, 0)) : positionLocal.add(vec3(0, 0, height))
 
   // slopes of the waves for lighting
@@ -83,15 +83,21 @@ function makeWaterMaterial(flowing: boolean, up: 'y' | 'z') {
   const tilt = vec2(gx, gz).mul(speed.mul(0.25).add(0.35)).add(off.div(d).mul(ringSlope))
   m.normalNode = normalize(normalView.add(vec3(tilt.x, 0, tilt.y).mul(0.35)))
 
-  // colour: deep blue looking down, sky-tinted at grazing angles, light crests
+  // colour by depth: turquoise in the shallows, clear blue deeper; sky-tinted at grazing angles, light crests.
+  // Lit partly by itself (emissive): without an environment map a PBR surface goes near black in the shade.
+  const depth = attribute('depth', 'float')
   const fres = float(1).sub(dot(normalView, positionViewDirection).abs()).clamp(0, 1)
-  const base = mix(color(0x0f3f63), color(0x2e7fa6), fres.pow(1.5))
-  let col = mix(base, color(0xbfdcea), fres.pow(4).mul(0.55))
-  col = mix(col, color(0x5fa6c4), smoothstep(0.55, 1, swell).mul(0.25))
-  // churned water around the player
-  const churn = smoothstep(1.6, 0.2, d).mul(wakeStrength)
-  col = mix(col, color(0xe6f2f4), churn.mul(0.45))
-  let alpha = mix(float(0.9), float(0.98), fres)
+  const deepness = smoothstep(0.15, 2.5, depth)
+  const body = mix(color(0x5cc0cf), color(0x1f6fa8), deepness)
+  let col = mix(body, color(0xb4dcf0), fres.pow(2.5).mul(0.6))
+  col = mix(col, color(0x8fd0e6), smoothstep(0.5, 1, swell).mul(0.3))
+  // the player's wake: white crests on the rings, churned water close to the body
+  const ringCrest = smoothstep(0.55, 0.95, sin(d.mul(3.2).sub(t.mul(7)))).mul(fade)
+  const churn = smoothstep(2.2, 0.3, d).mul(wakeStrength)
+  col = mix(col, color(0xf2fafc), ringCrest.mul(0.75).add(churn.mul(0.55)).clamp(0, 1))
+  // soft shoreline: fade out where the water gets thin instead of a jagged cut by the terrain
+  const shore = smoothstep(0.02, 0.4, depth)
+  let alpha = mix(float(0.82), float(0.95), deepness).add(fres.mul(0.05))
   if (current) {
     // white water where the stream runs fast (riffles, rapids)
     const n = mx_noise_float(vec3(p.x.mul(0.45), p.y.mul(0.45), t.mul(0.6)))
@@ -100,7 +106,8 @@ function makeWaterMaterial(flowing: boolean, up: 'y' | 'z') {
     alpha = alpha.add(foam.mul(0.1))
   }
   m.colorNode = col
-  m.opacityNode = alpha.add(churn.mul(0.05)).clamp(0, 1)
+  m.emissiveNode = col.mul(0.45)
+  m.opacityNode = alpha.add(ringCrest.mul(0.1)).add(churn.mul(0.05)).mul(shore).clamp(0, 1)
   return m
 }
 
@@ -109,8 +116,9 @@ function buildStreams(field: HeightField, tile: Terrain) {
   const half = tile.size / 2
   const pos: number[] = []
   const flow: number[] = []
+  const depth: number[] = []
   const idx: number[] = []
-  const ACROSS = 4 // vertices across the ribbon − 1
+  const ACROSS = 6 // vertices across the ribbon − 1
   for (const r of field.rivers.near(tile.centerX, tile.centerZ, half + 50)) {
     let prev = -1 // first vertex index of the previous node's row, −1 at the start of a run
     const inLake = Array.from({ length: r.n }, (_, i) => field.lake(r.x[i], r.z[i]) > -Infinity)
@@ -134,6 +142,7 @@ function buildStreams(field: HeightField, tile: Terrain) {
         const s = 1 - (2 * k) / ACROSS
         pos.push(x + px * s, y, z + pz * s)
         flow.push(fx, fz)
+        depth.push(r.level[i] - heightAt(tile, x + px * s, z + pz * s))
       }
       if (prev >= 0) for (let k = 0; k < ACROSS; k++) idx.push(prev + k, prev + k + 1, v + k, prev + k + 1, v + k + 1, v + k)
       prev = v
@@ -142,6 +151,7 @@ function buildStreams(field: HeightField, tile: Terrain) {
   const g = new BufferGeometry()
   g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3))
   g.setAttribute('flow', new BufferAttribute(new Float32Array(flow), 2))
+  g.setAttribute('depth', new BufferAttribute(new Float32Array(depth), 1))
   g.setAttribute('normal', new BufferAttribute(new Float32Array(pos.length).map((_, k) => (k % 3 === 1 ? 1 : 0)), 3))
   g.setIndex(idx)
   return g
@@ -150,7 +160,23 @@ function buildStreams(field: HeightField, tile: Terrain) {
 export default function Water({ field, tile }: { field: HeightField; tile: Terrain }) {
   const still = useMemo(() => makeWaterMaterial(false, 'z'), [])
   const running = useMemo(() => makeWaterMaterial(true, 'y'), [])
-  const lakes = useMemo(() => field.lakesNear(tile.centerX, tile.centerZ, 800), [field, tile])
+  const lakes = useMemo(
+    () =>
+      field.lakesNear(tile.centerX, tile.centerZ, 800).map((l) => {
+        // rings of vertices so the swell can move the surface; depth per vertex for the colour and the soft shore
+        const geo = new RingGeometry(0, l.radius + 1.5, 64, Math.max(8, Math.round(l.radius / 4)))
+        const pos = geo.getAttribute('position')
+        const depth = new Float32Array(pos.count)
+        const lx = l.x - tile.centerX
+        const lz = l.z - tile.centerZ
+        // the disc lies in XY and is turned flat (−90° about X): local y → world −z
+        for (let i = 0; i < pos.count; i++) depth[i] = l.level - heightAt(tile, lx + pos.getX(i), lz - pos.getY(i))
+        geo.setAttribute('depth', new BufferAttribute(depth, 1))
+        return { l, geo }
+      }),
+    [field, tile],
+  )
+  useEffect(() => () => lakes.forEach((k) => k.geo.dispose()), [lakes])
   const streams = useMemo(() => buildStreams(field, tile), [field, tile])
   const last = useMemo(() => ({ x: 0, z: 0, stir: 0 }), [])
   useEffect(
@@ -185,17 +211,15 @@ export default function Water({ field, tile }: { field: HeightField; tile: Terra
 
   return (
     <>
-      {lakes.map((l, i) => (
+      {lakes.map(({ l, geo }, i) => (
         <mesh
           key={i}
+          geometry={geo}
           material={still}
           position={[l.x - tile.centerX, l.level, l.z - tile.centerZ]}
           rotation={[-Math.PI / 2, 0, 0]}
           receiveShadow
-        >
-          {/* rings of vertices so the swell can move the surface */}
-          <ringGeometry args={[0, l.radius + 1.5, 64, Math.max(8, Math.round(l.radius / 4))]} />
-        </mesh>
+        />
       ))}
       <mesh geometry={streams} material={running} receiveShadow />
     </>
