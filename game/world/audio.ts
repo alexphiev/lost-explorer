@@ -77,7 +77,7 @@ export function createSoundEngine(muted: boolean): SoundEngine {
     ctx,
     step(surface, loud) {
       const t = ctx.currentTime
-      const v = 0.25 + 0.75 * loud
+      const v = (0.25 + 0.75 * loud) * 0.35 // playtest: steps were too loud
       const jitter = 0.85 + Math.random() * 0.3
       if (surface === 'water') {
         burst(t, 0.28, 'bandpass', 800 * jitter, 0.7, 0.5 * v)
@@ -94,8 +94,8 @@ export function createSoundEngine(muted: boolean): SoundEngine {
     },
     stroke(loud) {
       const t = ctx.currentTime
-      burst(t, 0.45, 'bandpass', 650 + Math.random() * 300, 0.6, 0.35 + 0.35 * loud, (Math.random() - 0.5) * 0.4)
-      burst(t + 0.08, 0.3, 'highpass', 2500, 0.5, 0.08 + 0.1 * loud)
+      burst(t, 0.45, 'bandpass', 650 + Math.random() * 300, 0.6, (0.35 + 0.35 * loud) * 0.5, (Math.random() - 0.5) * 0.4)
+      burst(t + 0.08, 0.3, 'highpass', 2500, 0.5, (0.08 + 0.1 * loud) * 0.5)
     },
     setAmbient(water, rushing, w) {
       const t = ctx.currentTime
