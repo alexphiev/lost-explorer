@@ -59,7 +59,7 @@ export default function Scene() {
         camera={{ fov: 55, near: 0.1, far: 900 }}
       >
         <color attach="background" args={[HAZE_COOL]} />
-        <Atmosphere mistHeight={world.terrain.maxHeight * 0.15} />
+        <Atmosphere mistHeight={world.terrain.minHeight + (world.terrain.maxHeight - world.terrain.minHeight) * 0.15} />
         <hemisphereLight args={['#b4cbe3', '#7a6545', 1.7]} />
         <SunLight />
         <Sky />

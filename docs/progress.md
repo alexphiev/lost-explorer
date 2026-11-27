@@ -1,6 +1,6 @@
-# Progress — MVP step 1 (+1.5)
+# Progress — MVP
 
-Branches: `step-1` (done), `step-1.5` (current, PR → master)
+Branches: `step-1`, `step-1.5` (merged in #2), `step-2` (current)
 
 ## Definition of done
 - [x] Next.js 16 + React 19.2 + TypeScript + Tailwind, exact versions pinned
@@ -26,11 +26,21 @@ Branches: `step-1` (done), `step-1.5` (current, PR → master)
 - [x] Chromium smoke screenshots (WebGL fallback, several seeds) — script, not a test suite
 - [x] `npm run build` passes, PR opened (step-1.5 → master, includes step 1)
 
+## Step 2 — 2D map prototype (+ 3D physics fixes)
+- [x] core: world-space height function shared by the 6 km map and the 1 km 3D scene
+- [x] core: valley = map grid + start + village (low ground, 2–2.8 km away)
+- [x] core: viewshed (climb reveals, farther = vaguer), fog of war Uint8Array (0 unseen, 1 far, 2 near)
+- [x] core/travel: bearing walk in 2 h chunks; stops: cliff, scrub, map edge, night, exhausted, berries, smoke, village; days/hour/energy; win/lose
+- [x] state: zustand journey store calling core
+- [x] /map: canvas map (hillshade, contours, fog), click to set bearing, Walk / Climb / Rest, HUD (day, hour, energy, log)
+- [x] 3D physics: tree + rock colliders, visual triangles match the Rapier heightfield, max climbable slope, respawn if fallen
+- [x] `npm run build` + Chromium smoke (/play and /map), PR opened
+
 ## Current task
-None. Step 1.5 done, PR #2 open and reviewed (fixes applied, rest in docs/ideas.md). Do not start step 2 without the user.
+None. Step 2 done, PR open. Do not start step 3 without the user.
 
 ## Next action
-User review of PR #2 + check WebGPU on a real GPU browser, then step 2 (2D map prototype, tech doc §15).
+User playtest of /map (is choosing where to go fun?) and of the 3D collisions; then step 3 (3D stop scene generated at the map position + switch between layers).
 
 ## Blockers
 None.
@@ -54,3 +64,12 @@ None.
 - Camera: camera-controls colliderMeshes had no effect; replaced by a per-frame clamp above heightAt() + lookAt; maxPolarAngle 0.5π.
 - Chromium checks: `scripts/smoke.cjs` (preinstalled Playwright, not a dependency or test suite) — 3 seeds, fails on page errors, saves screenshots. Only the WebGL fallback is checked headless.
 - PR review fixes: broadleaf trunks no longer tinted by leaf colour (separate trunk mesh), keyboard input ignored when the window loses focus, duplicate tone-mapping setup removed. Everything else deferred in docs/ideas.md.
+- Step 2: one world-space height function (`createHeightField`) feeds both the 12 km map (256², ~47 m cells) and the 1 km 3D scene, so step 3 can cut a 3D tile anywhere on the map.
+- Heights are absolute now (no per-tile normalisation); colours/placement use `relHeight`.
+- Rapier heightfield splits cells along the (ix+1,iz)–(ix,iz+1) diagonal (ray-cast check); `heightAt` follows the same triangles as the mesh and the collider.
+- "Water flows downhill towards people": a 1.2 % regional tilt toward a seeded exit bearing; the village is the lowest gentle spot 4.5–5.5 km away in that direction, and must be reachable (flood fill with the walking rules).
+- Scrub = independent noise patches (~7 %), never within 300 m of the start (height-based scrub walled off the lowlands).
+- Balance (Node sims, 10 seeds): best route ≈ 3.3–4.1 h of walking; a blind "climb + go downhill" bot wins ~50 % in 3 days. Tune after playtests.
+- Climbing a viewpoint can spot the village's smoke column even without line of sight (distance < view radius + 1 km).
+- 3D physics: 2 500 fixed cylinder colliders (trunks, rocks) created imperatively via useRapier; ecctrl slopeMaxAngle 0.7 rad (was 72°: you could walk up cliffs); respawn if the body ends 30 m under the lowest ground.
+- Map UI (/map) built by the builder agent: renderMap.ts (hillshade, contours, fog), MapView.tsx (click = bearing, Walk/Climb/Rest, HUD, end panel, Enter/C/R keys).

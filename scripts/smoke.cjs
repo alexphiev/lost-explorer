@@ -49,6 +49,31 @@ const seeds = ['abc', 'misty', 'lark42']
     console.log(`${seed}: ${status}`)
     await page.close()
   }
+  // 2D map: set a bearing by clicking, walk, climb, rest
+  for (const seed of seeds.slice(0, 2)) {
+    const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
+    const errors = []
+    page.on('pageerror', (e) => errors.push(e.message))
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+    await page.goto(`${BASE}/map?seed=${seed}`)
+    const canvas = await page.waitForSelector('canvas', { timeout: 30000 })
+    await page.waitForTimeout(1500)
+    await page.screenshot({ path: `${out}/map-${seed}-1-start.png` })
+    const box = await canvas.boundingBox()
+    await page.mouse.click(box.x + box.width * 0.7, box.y + box.height * 0.3)
+    await page.keyboard.press('KeyC')
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press('Enter')
+      await page.waitForTimeout(300)
+    }
+    await page.screenshot({ path: `${out}/map-${seed}-2-walked.png` })
+    const body = await page.textContent('body')
+    if (!/Day\s*1/.test(body)) errors.push('day counter missing')
+    const status = errors.length ? `FAIL ${errors.slice(0, 3).join(' | ').slice(0, 300)}` : 'ok'
+    if (errors.length) failures++
+    console.log(`map ${seed}: ${status}`)
+    await page.close()
+  }
   await browser.close()
   process.exit(failures ? 1 : 0)
 })()

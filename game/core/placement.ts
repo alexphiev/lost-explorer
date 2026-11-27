@@ -1,5 +1,5 @@
 import { makeRng, type Rng } from './rng'
-import { heightAt, moistureAt, slopeAt, type Terrain } from './terrain'
+import { heightAt, moistureAt, relHeight, slopeAt, type Terrain } from './terrain'
 
 export interface Instance {
   x: number
@@ -40,7 +40,7 @@ function scatter(
     const z = (rng() * 2 - 1) * half
     if (x * x + z * z < clear * clear) continue
     const y = heightAt(t, x, z)
-    site.h = y / t.maxHeight
+    site.h = relHeight(t, y)
     site.slope = slopeAt(t, x, z)
     site.moisture = moistureAt(t, x, z)
     if (rng() > chance(site)) continue

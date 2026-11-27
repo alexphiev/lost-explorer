@@ -114,6 +114,12 @@ export default function Player({ spawn, terrain }: { spawn: [number, number, num
     e.setMovement(input)
 
     const p = e.currPos
+    // safety net: fell through or out of the world → back to spawn
+    if (e.body && p.y < terrain.minHeight - 30 && e.body.translation().y < terrain.minHeight - 30) {
+      e.body.setTranslation({ x: spawn[0], y: spawn[1], z: spawn[2] }, true)
+      e.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
+      return
+    }
     const store = runStore.getState().playerPosition
     store.x = p.x
     store.y = p.y
@@ -168,7 +174,7 @@ export default function Player({ spawn, terrain }: { spawn: [number, number, num
 
   return (
     <>
-      <Ecctrl ref={ecctrl} position={spawn} enabledRotations={[false, true, false]} capsuleHalfHeight={0.5} capsuleRadius={0.3} maxWalkVel={3} maxRunVel={7}>
+      <Ecctrl ref={ecctrl} position={spawn} enabledRotations={[false, true, false]} slopeMaxAngle={0.7} capsuleHalfHeight={0.5} capsuleRadius={0.3} maxWalkVel={3} maxRunVel={7}>
         {/* feet at -1.0 (capsule bottom -0.8, float height 0.2) */}
         <group ref={body}>
           <Leg x={0.11} thigh={leftLeg} shin={leftShin} />
