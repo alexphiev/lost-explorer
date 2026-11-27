@@ -46,3 +46,13 @@ MVP = build order in `docs/tech-architecture.md` §15, steps 1–3: WebGPU spike
 - The game runs client-only (`dynamic(..., { ssr: false })`).
 - Frame loop: never `setState`, never allocate objects; use refs and `runStore.getState()`.
 - Look: low-poly, vertex colours, Lambert/Toon materials, fog, one directional + one hemisphere light.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
