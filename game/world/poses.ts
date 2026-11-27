@@ -16,7 +16,7 @@ export interface Pose {
   knee: number[]
   ankle: number[]
   armX: number[]
-  armY: number[]
+  armY: number[] // upper-arm twist: climbing IK, and the inward swing of a running arm
   armZ: number[]
   fore: number[]
 }
