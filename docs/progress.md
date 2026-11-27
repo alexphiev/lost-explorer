@@ -77,6 +77,11 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] Cold water drains energy (Warmth bar while in water; weaker strokes below 20); applied to the run when leaving the scene
 - [x] Map: streams and rivers inked in blue; rivers and deep streams stop a walk, shallow ones are waded (+3 min, −1 energy)
 
+## Falls and health (issue #19)
+- [x] Health (0–100) in the run: map bar + 3D HUD; rest +8/h, sleep +30; below 25 you can't run in 3D and walk slower (map ×0.7, 3D ×0.75); at 0 you can't walk on the map until you rest (no death)
+- [x] 3D "fallen" mode: control off ~1.5–3 s, trip pose (pitch forward → hands and knees → lie flat → push up) or crumple pose on hard landings, then stand up; message in the prompt with the damage
+- [x] Triggers (running only, > 4.3 m/s): into a trunk (bounce back), small rock (0.15–0.7 m) or stump ahead; across a log (40 % per log); downhill steeper than −0.55 for > 0.35 s; wet stones in a stream (0.5/s); landing > 2 m below where the jump/fall started (−5 − 1.5·(d−2)²)
+
 ## Current task
 None. Rivers done, PR open.
 
@@ -139,4 +144,5 @@ None.
 - Stream valleys are wide V's (bank 0.25 + 0.1·e + 0.0016·e² m within 170 m); upstream of a segment its carve uses the water level alongside upstream, so steep stretches don't undercut themselves.
 - Streams are 6–9 m wide: narrower ones fall between the 3.9 m vertices of the 3D mesh and show as dashes.
 - Cold water: −0.22 energy/s swimming (+0.12 in strong current), −0.04·wade/s wading; stored in runStore.coldLoss (frame loop), applied in leaveScene.
+- Falls: trip hazards are a compact Float32Array (trunks, rocks, stumps, logs) tested by proximity in the frame loop, not contact events; damage is per-scene runStore.injury applied in leaveScene (same pattern as coldLoss). Random rolls use Math.random (gameplay, not generation).
 - Sun glare (issue #25): Mie lobe tighter (g 0.93, coef 0.0025), sky brightness near the sun compressed and warmed, bloom 0.12 / radius 0.15 on input capped at 2.
