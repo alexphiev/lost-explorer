@@ -245,7 +245,7 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
     }
     wading = wet
     if (isScrub(v.field, nx, nz)) {
-      stop = { kind: 'scrub', message: `Thick, thorny scrub blocks the way ${dir}.` }
+      stop = { kind: 'scrub', message: `Thick, thorny scrub blocks the way ${dir}. Go around, or explore on foot and push through it slowly.` }
       break
     }
 

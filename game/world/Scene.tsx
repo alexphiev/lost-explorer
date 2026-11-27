@@ -186,6 +186,10 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
     (x: number, z: number) => valley.field.water(x + world.terrain.centerX, z + world.terrain.centerZ),
     [valley, world],
   )
+  const scrubAt = useCallback(
+    (x: number, z: number) => valley.field.scrub(x + world.terrain.centerX, z + world.terrain.centerZ),
+    [valley, world],
+  )
   const streamAt = useCallback(
     (x: number, z: number, out: WaterSample) => valley.field.stream(x + world.terrain.centerX, z + world.terrain.centerZ, out),
     [valley, world],
@@ -289,6 +293,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
               occluders={occluders}
               climbables={climbables}
               waterAt={waterAt}
+              scrubAt={scrubAt}
               streamAt={streamAt}
               energy={startEnergy}
               health={startHealth}

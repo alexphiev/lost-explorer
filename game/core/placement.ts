@@ -223,6 +223,9 @@ export function safeSpawn(t: Terrain, field: HeightField, veg: Vegetation, x0: n
       if (field.water(x + t.centerX + Math.cos(r) * 6, z + t.centerZ + Math.sin(r) * 6) > -Infinity) return false
     }
     if (field.water(x + t.centerX, z + t.centerZ) > -Infinity) return false
+    // not in the middle of thorny scrub: clear ground a few metres around
+    for (let a = 0; a < 6; a++) if (field.scrub(x + t.centerX + Math.cos(a * 1.047) * 5, z + t.centerZ + Math.sin(a * 1.047) * 5)) return false
+    if (field.scrub(x + t.centerX, z + t.centerZ)) return false
     for (const b of blockers) if (Math.abs(b.x - x) < 4 && Math.abs(b.z - z) < 4) return false
     return true
   }

@@ -102,8 +102,16 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] Water: deeper blue, less transparent (0.9–0.98), rolling swell moving the surface (lakes as subdivided rings, stream ribbons 5 vertices across), crests, foam on fast water; rings and churned water spreading from the player while wading/swimming (shared `wakeAt`/`wakeStrength` uniforms)
 - [x] Sounds (Web Audio, synthesised, `game/world/audio.ts` + `SoundScape.tsx`): footsteps on each half gait cycle by ground (grass, rock/scree, water) and pace, swim strokes, climbing knocks; stream babble / river rush by distance and current; wind by height with gusts; birds by day. Starts on first input, suspended behind the map, mute button / N (kept in localStorage)
 
+## Playtest 3 fixes
+- [x] Ambient noise beds (stream, river, wind) −75 %; birds and steps unchanged
+- [x] Thorny scrub passable in 3D: no colliders, walking speed ×0.4 inside it (prompt), bushes lean away from the body and quiver with the pace (`bushMaterial`, player uniforms); on the map the 2 h walk still stops at scrub (explore on foot to push through)
+- [x] 3D spawn never inside or right next to scrub
+- [x] Water, take 2: partly self-lit (emissive 0.45: without an env map the PBR surface went near black), colour by per-vertex depth (turquoise shallows → clear blue), soft shoreline (alpha fades where the water thins instead of the terrain's jagged cut), stream ribbons 7 vertices across; wake rings now white-crested, wider and stronger, churned water around the body
+- [x] Wake, take 3: no more big concentric rings. Moving: a V trailing behind along the swim direction (arms at ~20°, faint white) with small transverse ripples inside; always: small ripples and a little foam right at the body. Swim stroke sound: falling low-pass slosh + bubbly blips (no hiss); water steps the same way
+- [x] Water sound another −55 % (babble 0.035, rush 0.05); footsteps −65 %, swim strokes −50 %
+
 ## Current task
-None. Water + sounds done, waiting for playtest.
+None. Playtest 3 fixes done.
 
 ## Next action
 User playtest of the menu, map markers and resume. Then #29/#30 when a database is wanted.
