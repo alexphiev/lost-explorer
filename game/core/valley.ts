@@ -27,7 +27,7 @@ export function isScrub(field: HeightField, x: number, z: number): boolean {
 
 /**
  * Which map vertices can be reached on foot from `start` (8-neighbour flood fill with the walking
- * rules: no cliffs, no drops, no scrub). Coarser than the walk itself, good enough to validate a level.
+ * rules: no cliffs, no drops, no scrub, no lakes; rivers can be swum). Coarser than the walk itself, good enough to validate a level.
  */
 function reachable(field: HeightField, map: Terrain, start: Point): Uint8Array {
   const n = map.segments + 1
@@ -53,7 +53,7 @@ function reachable(field: HeightField, map: Terrain, start: Point): Uint8Array {
         const j = jz * n + jx
         if (seen[j]) continue
         const grade = (map.heights[j] - map.heights[i]) / (cell * Math.hypot(dx, dz))
-        if (grade > MAX_UPHILL || grade < -MAX_DOWNHILL || field.scrub(toX(jx), toX(jz)) || field.water(toX(jx), toX(jz)) > map.heights[j]) continue
+        if (grade > MAX_UPHILL || grade < -MAX_DOWNHILL || field.scrub(toX(jx), toX(jz)) || field.lake(toX(jx), toX(jz)) > map.heights[j]) continue
         seen[j] = 1
         queue[tail++] = j
       }

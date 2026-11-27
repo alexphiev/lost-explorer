@@ -6,6 +6,7 @@ import { Ecctrl, type EcctrlHandle } from 'ecctrl'
 import { EcctrlCameraControls, type EcctrlCameraControlsHandle } from 'ecctrl/camera'
 import * as THREE from 'three/webgpu'
 import { heightAt, type Terrain } from '@/game/core/terrain'
+import { createWaterSample, type WaterSample } from '@/game/core/rivers'
 import { runStore } from '@/game/state/run'
 import { bodyDropFor, footAlongCycle, HIP_Y, solveLeg, slopeSpeedFactor, strideLength, THIGH, type FootTarget, type LegAngles } from './gait'
 import { climbPose, createPose, mantlePose, scrambleArms, swimPose } from './poses'
@@ -53,7 +54,14 @@ export interface PlayerHud {
   prompt: HTMLDivElement | null
   grip: HTMLDivElement | null
   gripBox: HTMLDivElement | null
+  warmth: HTMLDivElement | null
+  warmthBox: HTMLDivElement | null
 }
+
+/** Cold water drains energy (per real second, scene time runs ×20): swimming, more in a strong current; wading a little. */
+const COLD_SWIM = 0.22
+const COLD_CURRENT = 0.12
+const COLD_WADE = 0.04
 
 type Mode = 'ground' | 'climb' | 'mantle' | 'swim'
 type ClimbKind = 'terrain' | 'rock' | 'tree'
@@ -61,6 +69,7 @@ type ClimbKind = 'terrain' | 'rock' | 'tree'
 // ---- reused every frame (no allocation in the loop) ----
 const input = { forward: false, backward: false, leftward: false, rightward: false, jump: false, run: false }
 const vec = { x: 0, y: 0, z: 0 }
+const flow = createWaterSample()
 const rot = { x: 0, y: 0, z: 0, w: 1 }
 const P = new THREE.Vector3()
 const camDir = new THREE.Vector3()
@@ -134,6 +143,8 @@ export default function Player({
   occluders,
   climbables,
   waterAt,
+  streamAt,
+  energy,
   hud,
   onLookAround,
 }: {
@@ -143,6 +154,10 @@ export default function Player({
   climbables: Climbables
   /** water surface height at local (x, z), −Infinity if dry */
   waterAt: (x: number, z: number) => number
+  /** stream / river at local (x, z): fills `out` with its current */
+  streamAt: (x: number, z: number, out: WaterSample) => boolean
+  /** energy when the scene started (cold water drains it, see runStore.coldLoss) */
+  energy: number
   hud: React.RefObject<PlayerHud>
   onLookAround: () => void
 }) {
@@ -193,6 +208,8 @@ export default function Player({
     jumpHeld: false,
     prompt: '',
     gripShown: -1,
+    warmthShown: -1,
+    coldTime: 0, // seconds in cold water (for the first warning)
   })
   const [, getKeys] = useKeyboardControls<Controls>()
   const [debugLog] = useState(() => new URLSearchParams(window.location.search).has('debug'))
@@ -259,6 +276,13 @@ export default function Player({
     const hC = heightAt(terrain, P.x, P.z)
     const water = waterAt(P.x, P.z)
     const feet = P.y - ROOT_TO_FEET
+    const inStream = streamAt(P.x, P.z, flow)
+    const flowX = inStream ? flow.flowX : 0
+    const flowZ = inStream ? flow.flowZ : 0
+    const flowSpeed = Math.hypot(flowX, flowZ)
+    const run = runStore.getState()
+    const strength = Math.max(0, energy - run.coldLoss) // what the cold has left you
+    let chilling = false
     let prompt = ''
     if (g.forceGround) {
       g.forceGround = false
@@ -508,7 +532,9 @@ export default function Player({
       const ix = cx * upDown + cz * leftRight
       const iz = cz * upDown - cx * leftRight
       const il = Math.hypot(ix, iz)
-      const swimSpeed = input.run ? 1.7 : 1.1
+      // the cold saps your strokes: weaker below 20 energy, barely moving at 0
+      const weak = 0.3 + 0.7 * clamp(strength / 20, 0, 1)
+      const swimSpeed = (input.run ? 1.7 : 1.1) * weak
       const tvx = il > 0 ? (ix / il) * swimSpeed : 0
       const tvz = il > 0 ? (iz / il) * swimSpeed : 0
       g.swimVx = damp(g.swimVx, tvx, 1.8, dt) // water: slow to start, glides to a stop
@@ -518,7 +544,14 @@ export default function Player({
       const targetY = water - 0.15 * crawl - 0.75 * (1 - crawl)
       const vy = clamp(follow(targetY - P.y, 0.3), -3, 2) + Math.sin(time * 2) * 0.05
       if (sp > 0.1) g.yaw = damp(g.yaw, g.yaw + wrapAngle(Math.atan2(g.swimVx, g.swimVz) - g.yaw), 4, dt)
-      setBody(g.swimVx, vy, g.swimVz, g.yaw)
+      // the current carries you along (strokes are relative to the water)
+      setBody(g.swimVx + flowX, vy, g.swimVz + flowZ, g.yaw)
+      run.coldLoss += rawDt * (COLD_SWIM + COLD_CURRENT * clamp(flowSpeed - 0.6, 0, 1))
+      chilling = true
+      g.coldTime += dt
+      if (strength <= 0) prompt = 'Too cold! Get out of the water'
+      else if (strength < 20) prompt = 'Freezing: your strokes weaken'
+      else if (g.coldTime < 6) prompt = flowSpeed > 0.4 ? 'Cold water saps your energy  ·  stop swimming to drift with the current' : 'Cold water saps your energy'
       g.phase += sp > 0.1 ? (sp * dt) / 1.8 : dt * 0.4
       g.grip = Math.min(1, g.grip + dt * 0.1)
     }
@@ -566,6 +599,18 @@ export default function Player({
       // −b·v with b = k·(1/f − 1) (k = that same gain) settles the speed at exactly f · vmax
       // (b < 0 is a push, for the faster descents).
       g.slopeF = damp(g.slopeF, slopeSpeedFactor(grade) * (1 - 0.5 * wade), 4, dt)
+      if (wade > 0.15) {
+        // cold feet, and the current pushes the deeper you stand in it
+        run.coldLoss += rawDt * COLD_WADE * wade
+        chilling = true
+        if (flowSpeed > 0.05) {
+          const push = wade * wade * 2.5 * dt * rb!.mass()
+          vec.x = flowX * push
+          vec.y = 0
+          vec.z = flowZ * push
+          rb!.applyImpulse(vec, true)
+        }
+      }
       if (grounded && hv > 0.2 && Math.abs(g.slopeF - 1) > 0.02) {
         const k = ACC_DELTA * e!.slideFriction
         const b = clamp(k * (1 / g.slopeF - 1), -0.08, 0.5) * rb!.mass()
@@ -698,6 +743,14 @@ export default function Player({
     if (h?.prompt && prompt !== g.prompt) {
       h.prompt.textContent = prompt
       g.prompt = prompt
+    }
+    if (!chilling) g.coldTime = 0
+    const warmthShown = chilling ? Math.round(clamp(strength / 100, 0, 1) * 100) / 100 : -1
+    if (h?.warmth && warmthShown !== g.warmthShown) {
+      if (h.warmthBox) h.warmthBox.style.opacity = warmthShown < 0 ? '0' : '1'
+      h.warmth.style.transform = `scaleX(${Math.max(0, warmthShown)})`
+      h.warmth.style.background = strength < 20 ? '#e05a3a' : '#9cc8e0'
+      g.warmthShown = warmthShown
     }
     const gripShown = draining ? Math.round(g.grip * 50) / 50 : -1
     if (h?.grip && gripShown !== g.gripShown) {

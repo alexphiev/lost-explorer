@@ -67,11 +67,21 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] Water rendering (TSL fresnel + ripples) and lakes on the map (builder)
 - [x] Light follows the game hour: sun/moon path, colours, sky, fog tint, night (builder)
 
+## Rivers and streams
+- [x] Main river valley (+ one tributary valley) designed per seed: floor only descends, flows toward the exit, so the village lies by the river ("follow the water downstream")
+- [x] Streams everywhere from water routing on a 50 m grid (pits filled up to 40 m, deeper hollows end in ponds): ~250 km of streams, ~35 km of rivers, 3–4 per km² tile
+- [x] Each stream carves a bed and a wide gentle V valley; levels never rise downstream; stretches that would float are dry (the water drops into a deeper valley)
+- [x] Depth and current by size and slope: most streams wadeable, the biggest ones and all rivers must be swum; currents 0.25–1.5 m/s (streams), 0.5–2.2 m/s (rivers)
+- [x] 3D: water ribbons with ripples drifting downstream and white water where fast; ponds as small lakes
+- [x] Swimming is carried by the current (stop stroking to drift); wading pushes you downstream the deeper you stand
+- [x] Cold water drains energy (Warmth bar while in water; weaker strokes below 20); applied to the run when leaving the scene
+- [x] Map: streams and rivers inked in blue; rivers and deep streams stop a walk, shallow ones are waded (+3 min, −1 energy)
+
 ## Current task
-None. Realism pass 2 done, PR open.
+None. Rivers done, PR open.
 
 ## Next action
-User feel-test (climb a cliff, a boulder, a tree; swim; night). Then: sounds (steps by ground, water, wind, birds), splash/ripple effects, rivers.
+User feel-test (cross a stream on foot, swim a river, drift, get cold). Then: sounds (steps by ground, water, wind, birds), splash/ripple effects.
 
 ## Blockers
 None.
@@ -125,3 +135,7 @@ None.
 - Surfaces: `game/render/tsl/surface.ts` adds a procedural GPU "texture" (3 scales of `mx_noise_float` on world position, multiplied with vertex/instance colours): terrain (+ rock strata on steep faces, grass speckles), rocks, and every wind-swayed plant. No image textures.
 - Small decor (`placeDecor`, `Decor.tsx`): pebbles, ferns, shrubs with berries, mushrooms, fallen logs and stumps (with colliders), dead branches — ~10k instances, only within 220 m of the player (fog hides the rest), per-world-chunk deterministic.
 - Sky follow-up (playtest screenshots): saturation ×1.35 turned the zenith violet → now ×1.08 and scale ×0.5, rayleigh 1.1. Looking at the sun gave a white veil over half the screen (bloom fed by huge HDR sky values) → bloom input capped at 3, threshold 1.1, strength 0.22, radius 0.3: disc + soft halo. Camera may tilt slightly above the horizon (maxPolarAngle 0.62π) to look at the sky.
+- Rivers: a designed main valley + tributary give a drained backbone; the noise terrain alone is ~1/3 closed hollows (up to 70 m deep), so pure flow routing gave gorges everywhere.
+- Stream valleys are wide V's (bank 0.25 + 0.1·e + 0.0016·e² m within 170 m); upstream of a segment its carve uses the water level alongside upstream, so steep stretches don't undercut themselves.
+- Streams are 6–9 m wide: narrower ones fall between the 3.9 m vertices of the 3D mesh and show as dashes.
+- Cold water: −0.22 energy/s swimming (+0.12 in strong current), −0.04·wade/s wading; stored in runStore.coldLoss (frame loop), applied in leaveScene.

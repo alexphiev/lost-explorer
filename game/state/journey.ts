@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { runStore } from './run'
 import { climb, explore, newRun, rest, walk, type RunState } from '@/game/core/travel'
 import { snapToTileGrid } from '@/game/core/terrain'
 import { generateValley, type Point, type Valley } from '@/game/core/valley'
@@ -56,6 +57,10 @@ export const useJourney = create<Journey>((set, get) => ({
     const { valley, run, sceneCenter } = get()
     if (!valley || !run || !sceneCenter) return
     let next = explore(valley, run, sceneCenter.x + localX, sceneCenter.z + localZ, (seconds * SCENE_TIME_SCALE) / 3600)
+    // cold water drained energy while exploring
+    const cold = runStore.getState().coldLoss
+    if (cold > 0) next = { ...next, energy: Math.max(0, next.energy - cold) }
+    runStore.getState().coldLoss = 0
     if (climbed && next.status === 'playing') next = climb(valley, next).state
     set({ run: next, layer: 'map', sceneCenter: null })
   },
