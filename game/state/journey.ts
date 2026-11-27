@@ -3,11 +3,23 @@ import { runStore } from './run'
 import { climb, explore, newRun, rest, walk, type RunState } from '@/game/core/travel'
 import { snapToTileGrid } from '@/game/core/terrain'
 import { generateValley, type Point, type Valley } from '@/game/core/valley'
+import type { Best, SavedRun } from './save'
+
+/** Real seconds played in the current run (ticked by the game shell, not by the frame loop). */
+export const useClock = create<{ seconds: number }>(() => ({ seconds: 0 }))
+
+/** How a won run compares with the best one, for the victory screen. */
+export interface Result {
+  time: Best
+  previous: Best | null
+}
 
 /** 1 real second in the 3D scene = 20 game seconds (3 real minutes ≈ 1 game hour). */
 export const SCENE_TIME_SCALE = 20
 
 interface Journey {
+  /** campaign level id, null for a free valley (?seed=) */
+  level: number | null
   valley: Valley | null
   run: RunState | null
   /** bearing chosen on the map, degrees clockwise from north (null = none yet) */
@@ -15,7 +27,9 @@ interface Journey {
   layer: 'map' | 'scene'
   /** world position the 3D tile is centred on */
   sceneCenter: Point | null
-  start: (seed: string) => void
+  result: Result | null
+  start: (seed: string, level?: number | null) => void
+  resume: (saved: SavedRun) => void
   setBearing: (b: number) => void
   walk: () => void
   climb: () => void
@@ -26,14 +40,23 @@ interface Journey {
 }
 
 export const useJourney = create<Journey>((set, get) => ({
+  level: null,
   valley: null,
   run: null,
   bearing: null,
   layer: 'map',
   sceneCenter: null,
-  start: (seed) => {
-    const valley = generateValley(seed)
-    set({ valley, run: newRun(valley), bearing: null, layer: 'map', sceneCenter: null })
+  result: null,
+  start: (seed, level = get().level) => {
+    const valley = get().valley?.seed === seed ? get().valley! : generateValley(seed)
+    useClock.setState({ seconds: 0 })
+    set({ level, valley, run: newRun(valley), bearing: null, layer: 'map', sceneCenter: null, result: null })
+  },
+  resume: (saved) => {
+    const valley = get().valley?.seed === saved.seed ? get().valley! : generateValley(saved.seed)
+    useClock.setState({ seconds: saved.seconds })
+    set({ level: saved.level, valley, run: saved.run, bearing: saved.bearing, layer: 'map', sceneCenter: null, result: null })
+    if (saved.layer === 'scene') get().enterScene()
   },
   setBearing: (bearing) => set({ bearing }),
   walk: () => {

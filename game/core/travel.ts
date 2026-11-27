@@ -41,6 +41,36 @@ export interface Stop {
   message: string
 }
 
+/** A point of interest the player has discovered, pinned on the map. */
+export type MarkKind = 'camp' | 'view' | 'berries' | 'smoke' | 'cliff' | 'scrub' | 'water' | 'village'
+export interface Mark {
+  kind: MarkKind
+  x: number
+  z: number
+  label: string
+  day: number
+  hour: number
+}
+
+const MARK_OF: Partial<Record<StopKind, MarkKind>> = { cliff: 'cliff', drop: 'cliff', scrub: 'scrub', lake: 'water', river: 'water', berries: 'berries', village: 'village' }
+const MARK_LABEL: Record<MarkKind, string> = {
+  camp: 'Night camp',
+  view: 'Viewpoint',
+  berries: 'Berry bush',
+  smoke: 'Woodsmoke',
+  cliff: 'Cliff',
+  scrub: 'Thorny scrub',
+  water: 'Deep water',
+  village: 'Village',
+}
+
+/** Pin a mark, unless one of the same kind is already close by. */
+function addMark(s: RunState, kind: MarkKind, x: number, z: number, label = MARK_LABEL[kind]): Mark[] {
+  const marks = s.marks ?? []
+  if (marks.some((m) => m.kind === kind && Math.hypot(m.x - x, m.z - z) < 200)) return marks
+  return [...marks, { kind, x, z, label, day: s.day, hour: s.hour }]
+}
+
 export interface RunState {
   day: number // 1-based
   hour: number // 0..24, fractional
@@ -58,6 +88,8 @@ export interface RunState {
   /** counts random rolls so events stay deterministic for a seed + action sequence */
   rolls: number
   log: Stop[]
+  /** discovered points of interest */
+  marks: Mark[]
 }
 
 const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west']
@@ -100,6 +132,7 @@ export function newRun(v: Valley): RunState {
     status: 'playing',
     smelledSmoke: false,
     rolls: 0,
+    marks: [],
     log: [{ kind: 'start', message: `Day 1, 08:00. You wake up lost. Reach the village within ${DAYS_ALLOWED} days.` }],
   }
 }
@@ -229,7 +262,17 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
 
   path.push(x, z)
   const status = stop?.kind === 'village' ? 'won' : s.status
-  return withStop({ ...s, x, z, hour, energy, path, smelledSmoke, rolls, status }, stop!)
+  let next: RunState = { ...s, x, z, hour, energy, path, smelledSmoke, rolls, status }
+  const mk = MARK_OF[stop!.kind]
+  if (mk === 'village') next = { ...next, marks: addMark(next, 'village', v.village.x, v.village.z) }
+  else if (mk) {
+    // obstacles are pinned a little ahead, where they block the way
+    const r = (bearing * Math.PI) / 180
+    const ahead = mk === 'berries' ? 0 : 40
+    next = { ...next, marks: addMark(next, mk, x + Math.sin(r) * ahead, z - Math.cos(r) * ahead) }
+  }
+  if (stop!.kind === 'smoke') next = { ...next, marks: addMark(next, 'smoke', v.village.x, v.village.z) }
+  return withStop(next, stop!)
 }
 
 /** Time spent exploring on foot in the 3D scene: move to world (x, z). */
@@ -250,6 +293,7 @@ export function explore(v: Valley, s: RunState, x: number, z: number, hours: num
     energy: Math.max(0, s.energy - hours * 8),
     path: [...s.path, x, z],
     status: won ? 'won' : s.status,
+    marks: won ? addMark(s, 'village', v.village.x, v.village.z) : s.marks,
     log: [...s.log, stop],
   }
 }
@@ -263,14 +307,14 @@ export function climb(v: Valley, s: RunState): { state: RunState; stop: Stop } {
   const radius = 1500 + rel * 3500
   revealViewshed(v.map, s.fog, s.x, s.z, 15, radius)
   const hour = s.hour + 1
-  const state = { ...s, hour, energy: s.energy - 10 }
+  const state = { ...s, hour, energy: s.energy - 10, marks: addMark(s, 'view', s.x, s.z, `Viewpoint (${Math.round(heightAt(v.map, s.x, s.z))} m)`) }
   const view = rel > 0.6 ? 'From this height the land spreads out below you.' : 'Trees and hills block most of the view.'
   // smoke rises high: from a viewpoint you can spot it even when the village itself is hidden
   const dist = Math.hypot(s.x - v.village.x, s.z - v.village.z)
   if (!s.smelledSmoke && dist < radius + 1000) {
     revealViewshed(v.map, s.fog, v.village.x, v.village.z, 30, 150, 0)
     const toward = compassName(bearingTo(s.x, s.z, v.village.x, v.village.z))
-    return withStop({ ...state, smelledSmoke: true }, {
+    return withStop({ ...state, smelledSmoke: true, marks: addMark(state, 'smoke', v.village.x, v.village.z) }, {
       kind: 'smoke',
       message: `You climb and look around. ${view} Far to the ${toward}, a thin column of smoke rises.`,
     })
@@ -292,6 +336,6 @@ export function rest(_v: Valley, s: RunState): { state: RunState; stop: Stop } {
       message: `Day ${day} dawns and nobody is looking for you here any more. You did not make it.`,
     })
   }
-  const state = { ...s, day, hour: DAY_START, energy: Math.min(100, s.energy + 60), health: Math.min(100, s.health + 30) }
+  const state = { ...s, day, hour: DAY_START, marks: addMark(s, 'camp', s.x, s.z, `Night camp, day ${s.day}`), energy: Math.min(100, s.energy + 60), health: Math.min(100, s.health + 30) }
   return withStop(state, { kind: 'sleep', message: `You sleep under the stars. Day ${day}, 07:00. +60 energy${s.health < 100 ? ', +30 health' : ''}.` })
 }

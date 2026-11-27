@@ -1,1 +1,57 @@
 @import 'tailwindcss';
+
+/* ---- game look: parchment, ink, wood ---- */
+:root {
+  --ink: #3b2a1a;
+  --parchment: #efe4c8;
+  --moss: #4f6b3a;
+  --rust: #9a3b1e;
+}
+
+.paper {
+  background-color: var(--parchment);
+  background-image:
+    radial-gradient(ellipse at 20% 10%, rgb(255 250 235 / 0.7), transparent 60%),
+    radial-gradient(ellipse at 85% 90%, rgb(160 120 70 / 0.18), transparent 55%),
+    radial-gradient(circle at 50% 50%, transparent 60%, rgb(120 85 45 / 0.22));
+  color: var(--ink);
+}
+
+.topo-bg {
+  background-color: #1d2a22;
+  background-image:
+    radial-gradient(ellipse at 50% 0%, rgb(255 210 140 / 0.18), transparent 60%),
+    repeating-radial-gradient(circle at 30% 70%, transparent 0 38px, rgb(255 255 255 / 0.045) 38px 40px),
+    repeating-radial-gradient(circle at 80% 20%, transparent 0 52px, rgb(255 255 255 / 0.035) 52px 54px);
+}
+
+.btn-game {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.5rem;
+  border: 2px solid #2a1c10;
+  background: linear-gradient(#8a5a2b, #6b4220);
+  color: #fbf3df;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-weight: 700;
+  padding: 0.55rem 1rem;
+  box-shadow: 0 3px 0 #2a1c10, inset 0 1px 0 rgb(255 255 255 / 0.25);
+  transition: transform 80ms, box-shadow 80ms, filter 120ms;
+}
+.btn-game:hover:not(:disabled) { filter: brightness(1.12); }
+.btn-game:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #2a1c10; }
+.btn-game:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-game.green { background: linear-gradient(#5f8a43, #45672f); }
+.btn-game.ghost { background: rgb(59 42 26 / 0.08); color: var(--ink); border-color: rgb(59 42 26 / 0.5); box-shadow: none; }
+
+.kbd {
+  border-radius: 0.25rem;
+  border: 1px solid rgb(255 255 255 / 0.4);
+  background: rgb(0 0 0 / 0.2);
+  padding: 0 0.3rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+  font-weight: 400;
+}

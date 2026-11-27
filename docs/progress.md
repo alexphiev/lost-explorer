@@ -83,16 +83,26 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] 3D "fallen" mode: control off ~1.5–3 s, trip pose (pitch forward → hands and knees → lie flat → push up) or crumple pose on hard landings, then stand up; message in the prompt with the damage
 - [x] Triggers (running only, > 4.3 m/s): into a trunk (bounce back), small rock (0.15–0.7 m) or stump ahead; across a log (40 % per log); downhill steeper than −0.55 for > 0.35 s; wet stones in a stream (0.5/s); landing > 2 m below where the jump/fall started (−5 − 1.5·(d−2)²)
 
+## Levels, local save, map and menu rework
+- [x] Campaign: 6 fixed valleys (`game/core/levels.ts`), level 1 unlocked, winning a level unlocks the next; `/play?level=N` (`&new=1` restarts), `?seed=` still works as a free valley
+- [x] Real play time per level (ticks while the tab is visible), best time + in-game hours kept per level
+- [x] Local save in localStorage (`game/state/save.ts`): unlocked levels, best times, run in progress per valley (fog packed 2 bits/cell), saved on every action, every 5 s and on page hide; reopening resumes on the map (or back in the 3D scene at the same tile)
+- [x] Map: discovered points of interest (camps, viewpoints, berries, smoke, cliffs, scrub, deep water, village) + seen summits and lakes, hand-drawn symbols, hover tooltips, legend, scale bar; parchment/journal layout with game buttons and key hints; end screen with time, best time, next level
+- [x] Main menu: title, Play/Continue, level cards (locked/done/best time/continue/restart)
+- [ ] Accounts + database (#29), per-level leaderboard (#30)
+
 ## Current task
-None. Rivers done, PR open.
+None. Levels/local save done.
 
 ## Next action
-User feel-test (cross a stream on foot, swim a river, drift, get cold). Then: sounds (steps by ground, water, wind, birds), splash/ripple effects.
+User playtest of the menu, map markers and resume. Then #29/#30 when a database is wanted.
 
 ## Blockers
 None.
 
 ## Decisions (one line each)
+- Local save in localStorage, not a cookie: the fog of war alone is ~22 KB (cookies cap at 4 KB) and nothing needs to reach a server yet.
+- Level links are plain `<a>` (full reload): the game store and the WebGPU scene start clean for each level.
 - TypeScript pinned to 5.9.3 (TS 7 is the native port; Next 16 tooling targets 5.x).
 - `leva` installed only because it is a peer dependency of ecctrl 2.
 - No ESLint for now (not in the definition of done).

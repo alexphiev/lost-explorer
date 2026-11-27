@@ -15,6 +15,45 @@ export interface Valley {
   map: Terrain
   start: Point
   village: Point
+  /** named features drawn on the map once seen: summits and lakes */
+  landmarks: Landmark[]
+}
+
+export interface Landmark {
+  kind: 'peak' | 'lake'
+  x: number
+  z: number
+  label: string
+}
+
+/** The highest summits (well apart) and the lakes of the map. */
+function findLandmarks(field: HeightField, map: Terrain): Landmark[] {
+  const n = map.segments + 1
+  const cell = map.size / map.segments
+  const h = map.heights
+  const W = 10
+  const tops: { x: number; z: number; h: number }[] = []
+  for (let iz = W; iz < n - W; iz += 2) {
+    for (let ix = W; ix < n - W; ix += 2) {
+      const c = h[iz * n + ix]
+      let top = true
+      for (let dz = -W; dz <= W && top; dz += 2) for (let dx = -W; dx <= W; dx += 2) if (h[(iz + dz) * n + ix + dx] > c) { top = false; break }
+      if (top) tops.push({ x: -map.size / 2 + ix * cell, z: -map.size / 2 + iz * cell, h: c })
+    }
+  }
+  tops.sort((a, b) => b.h - a.h)
+  const out: Landmark[] = []
+  for (const t of tops) {
+    if (out.length >= 10) break
+    if (out.some((o) => Math.hypot(o.x - t.x, o.z - t.z) < 1500)) continue
+    out.push({ kind: 'peak', x: t.x, z: t.z, label: `Summit, ${Math.round(t.h)} m` })
+  }
+  const half = map.size / 2
+  for (const l of field.lakesNear(0, 0, map.size * 0.72)) {
+    if (l.radius < 60 || Math.abs(l.x) > half || Math.abs(l.z) > half) continue
+    out.push({ kind: 'lake', x: l.x, z: l.z, label: l.radius > 250 ? 'Lake' : 'Pond' })
+  }
+  return out
 }
 
 export const MAX_UPHILL = 0.85 // rise/run (~40°): steeper = cliff
@@ -89,5 +128,5 @@ export function generateValley(seed: string): Valley {
       }
     }
   }
-  return { seed, field, map, start, village: best }
+  return { seed, field, map, start, village: best, landmarks: findLandmarks(field, map) }
 }
