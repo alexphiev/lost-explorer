@@ -36,6 +36,7 @@ const ACC_DELTA = 0.2 // ecctrl accDeltaTime
 const HIP_X = 0.11
 const BASE_FOV = 55
 const CLIMB_MIN_SLOPE = 0.9 // rise/run over the next 1.5 m (~42°) that turns walking into climbing
+const GRIP_WALL_ANGLE = (55 * Math.PI) / 180 // grip drains on walls steeper than this; slabs below are restful
 const CLIMB_EXIT_ANGLE = 0.61 // rad (~35°): ground walkable again
 const SWIM_DEPTH = 1.3 // water deeper than this under you → swim
 const ROOT_TO_FEET = 1.0
@@ -340,6 +341,7 @@ export default function Player({
 
     // ================= modes =================
     let climbSteep = 0
+    let draining = false // grip spent this frame (drives the Grip widget)
     let moving = 0
     if (g.mode === 'ground') {
       const fwd = e.bodyZAxis
@@ -415,7 +417,10 @@ export default function Player({
         g.yaw = damp(g.yaw, g.yaw + wrapAngle(Math.atan2(ux, uz) - g.yaw), 8, dt)
         setBody(vx, vy, vz, g.yaw)
         // grip: walls tire your arms, on slabs you can rest
-        if (climbSteep > 0.4) g.grip -= dt * (0.02 + 0.05 * climbSteep) * (input.run ? 1.6 : 1) * (anyMove ? 1 : 0.6)
+        if (theta > GRIP_WALL_ANGLE) {
+          g.grip -= dt * (0.02 + 0.05 * climbSteep) * (input.run ? 1.6 : 1) * (anyMove ? 1 : 0.6)
+          draining = true
+        }
         else if (!anyMove) g.grip = Math.min(1, g.grip + dt * 0.08)
         prompt = 'Climbing  ·  Space jump off'
         if (theta < CLIMB_EXIT_ANGLE) {
@@ -440,6 +445,7 @@ export default function Player({
         g.yaw = damp(g.yaw, g.yaw + wrapAngle(Math.atan2(c.x - P.x, c.z - P.z) - g.yaw), 10, dt)
         setBody(follow(tx - P.x), follow(g.climbY - P.y), follow(tz - P.z), g.yaw)
         g.grip -= dt * 0.025 * (input.run ? 1.6 : 1) * (anyMove ? 1 : 0.5)
+        draining = true
         if (c.tree && feetNow >= c.top - 0.05) {
           prompt = 'E  look around   ·   S  climb down'
           if (ePressed) onLookAround()
@@ -693,7 +699,7 @@ export default function Player({
       h.prompt.textContent = prompt
       g.prompt = prompt
     }
-    const gripShown = g.grip < 0.98 ? Math.round(g.grip * 50) / 50 : -1
+    const gripShown = draining ? Math.round(g.grip * 50) / 50 : -1
     if (h?.grip && gripShown !== g.gripShown) {
       if (h.gripBox) h.gripBox.style.opacity = gripShown < 0 ? '0' : '1'
       h.grip.style.transform = `scaleX(${Math.max(0, gripShown)})`
@@ -768,7 +774,7 @@ export default function Player({
         enable={ecctrlOn}
         position={spawn}
         enabledRotations={[false, true, false]}
-        slopeMaxAngle={0.7}
+        slopeMaxAngle={Math.atan(CLIMB_MIN_SLOPE)}
         capsuleHalfHeight={0.5}
         capsuleRadius={0.3}
         maxWalkVel={WALK_VEL}
