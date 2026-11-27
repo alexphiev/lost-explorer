@@ -57,6 +57,24 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
     }
   }, [valley, center])
 
+  // camera occluders: tree crowns and rocks as vertical cylinders [x, z, yBottom, yTop, radius]
+  const occluders = useMemo(() => {
+    const v = world.vegetation
+    const out = new Float32Array((v.conifers.length + v.broadleaves.length + v.rocks.length) * 5)
+    let o = 0
+    const add = (x: number, z: number, y0: number, y1: number, r: number) => {
+      out[o++] = x
+      out[o++] = z
+      out[o++] = y0
+      out[o++] = y1
+      out[o++] = r
+    }
+    for (const it of v.conifers) add(it.x, it.z, it.y + 1.3 * it.scale, it.y + 8.2 * it.scale, 1.5 * it.scale)
+    for (const it of v.broadleaves) add(it.x, it.z, it.y + 2.2 * it.scale, it.y + 6.3 * it.scale, 2.0 * it.scale)
+    for (const it of v.rocks) add(it.x, it.z, it.y - it.scale, it.y + it.scale * 0.6, it.scale * 0.9)
+    return out
+  }, [world])
+
   // game clock shown in the HUD (not in the frame loop)
   useEffect(() => {
     const id = setInterval(() => setElapsed((performance.now() - enteredAt) / 1000), 1000)
@@ -101,7 +119,7 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
             <Terrain terrain={t} />
             <Vegetation data={world.vegetation} />
             <Village houses={world.houses} />
-            <Player spawn={world.spawn} terrain={t} />
+            <Player spawn={world.spawn} terrain={t} occluders={occluders} />
           </Physics>
         </Suspense>
         <PostFX />
