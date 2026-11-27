@@ -2,7 +2,7 @@ import { makeRng } from './rng'
 import { createWaterSample } from './rivers'
 import { heightAt, slopeAt } from './terrain'
 import { isScrub, MAX_DOWNHILL, MAX_UPHILL, type Valley } from './valley'
-import { createFog, fogAt, FOG_NEAR, FOG_UNSEEN, revealAround, revealViewshed } from './viewshed'
+import { createFog, fogAt, FOG_UNSEEN, revealAround, revealViewshed } from './viewshed'
 import { CLUES, GOALS, type ClueKind } from './goals'
 
 export const DAYS_ALLOWED = 3
@@ -11,7 +11,8 @@ export const NIGHTFALL = 20 // hour walking stops
 const CHUNK_HOURS = 2
 const STEP = 15 // metres per simulation step
 const WALK_SPEED = 2 // km/h off-trail on flat open ground
-const VILLAGE_RADIUS = 120
+const CLUE_NEAR = 120 // metres: small clues are found only by passing this close
+const GOAL_NEAR = 250 // metres: small goals show on the map once you pass this close
 export const HURT = 25 // health below this: slower on the map, no running in 3D
 const WADE_DEPTH = 1.2 // deeper streams (and all rivers) have to be swum: on foot, in the 3D scene
 const ws = createWaterSample()
@@ -98,6 +99,8 @@ export interface RunState {
   marks: Mark[]
   /** indices of the valley's clues already found */
   found: number[]
+  /** passed close to a small goal (cabin, boat…): it shows on the map */
+  goalSeen?: boolean
 }
 
 const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west']
@@ -123,22 +126,29 @@ function withStop(s: RunState, stop: Stop): { state: RunState; stop: Stop } {
   return { state: { ...s, log: [...s.log, stop] }, stop }
 }
 
-/** Clues are found once seen up close (cairns: once seen at all). Returns the state with them pinned, and their journal lines. */
-function spotClues(v: Valley, s: RunState): { state: RunState; lines: string[] } {
+/**
+ * What you come across standing at (x, z): small clues within CLUE_NEAR, cairns as soon as they are on the map,
+ * and a small goal within GOAL_NEAR. Returns the state with them pinned (unchanged object if nothing new) and the journal lines.
+ */
+function spotClues(v: Valley, s: RunState, x: number, z: number, hour = s.hour): { state: RunState; lines: string[] } {
   const lines: string[] = []
   let found = s.found ?? []
   let marks = s.marks ?? []
   v.clues.forEach((c, i) => {
     if (found.includes(i)) return
     const def = CLUES[c.kind]
-    const f = fogAt(v.map, s.fog, c.x, c.z)
-    if (f === FOG_UNSEEN || (!def.far && f !== FOG_NEAR)) return
+    const close = Math.hypot(c.x - x, c.z - z) < CLUE_NEAR
+    if (!close && !(def.far && fogAt(v.map, s.fog, c.x, c.z) !== FOG_UNSEEN)) return
     found = [...found, i]
-    marks = [...marks, { kind: 'clue', x: c.x, z: c.z, label: def.name, day: s.day, hour: s.hour, clue: c.kind, bearing: c.bearing }]
+    marks = [...marks, { kind: 'clue', x: c.x, z: c.z, label: def.name, day: s.day, hour, clue: c.kind, bearing: c.bearing }]
     lines.push(def.text.replace('{dir}', compassName(c.bearing)))
   })
-  return { state: lines.length ? { ...s, found, marks } : s, lines }
+  const goalSeen = s.goalSeen || Math.hypot(v.goal.x - x, v.goal.z - z) < GOAL_NEAR
+  if (!lines.length && goalSeen === !!s.goalSeen) return { state: s, lines }
+  return { state: { ...s, found, marks, goalSeen }, lines }
 }
+
+const goalReach = (v: Valley) => GOALS[v.goal.kind].reach
 
 const goalFound = (v: Valley) => GOALS[v.goal.kind].found
 
@@ -177,6 +187,7 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
   const dz = -Math.cos(rad)
   const half = v.map.size / 2
   let { x, z, hour, energy, smelledSmoke, rolls } = s
+  let probe = s // clues and goal sightings along the way
   const path = [...s.path]
   let elapsed = 0
   let wading = false
@@ -250,13 +261,15 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
     if (i % 3 === 0) {
       path.push(x, z)
       revealAround(v.map, s.fog, x, z, 120)
-      if (v.clues.length && (s.found?.length ?? 0) < v.clues.length && spotClues(v, s).lines.length) {
-        stop = { kind: 'clue', message: '' } // filled in below, once the state is built
+      const spotted = spotClues(v, probe, x, z, hour)
+      probe = spotted.state
+      if (spotted.lines.length) {
+        stop = { kind: 'clue', message: spotted.lines.join(' ') }
         break
       }
     }
 
-    if (Math.hypot(x - v.village.x, z - v.village.z) < VILLAGE_RADIUS) {
+    if (Math.hypot(x - v.village.x, z - v.village.z) < goalReach(v)) {
       stop = { kind: 'village', message: goalFound(v) }
       break
     }
@@ -294,7 +307,7 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
 
   path.push(x, z)
   const status = stop?.kind === 'village' ? 'won' : s.status
-  let next: RunState = { ...s, x, z, hour, energy, path, smelledSmoke, rolls, status }
+  let next: RunState = { ...s, x, z, hour, energy, path, smelledSmoke, rolls, status, found: probe.found, marks: probe.marks, goalSeen: probe.goalSeen }
   const mk = MARK_OF[stop!.kind]
   if (mk === 'village') next = { ...next, marks: addMark(next, 'village', v.village.x, v.village.z) }
   else if (mk) {
@@ -304,11 +317,6 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
     next = { ...next, marks: addMark(next, mk, x + Math.sin(r) * ahead, z - Math.cos(r) * ahead) }
   }
   if (stop!.kind === 'smoke') next = { ...next, marks: addMark(next, 'smoke', v.village.x, v.village.z) }
-  if (stop!.kind === 'clue') {
-    const spotted = spotClues(v, next)
-    next = spotted.state
-    stop = { kind: 'clue', message: spotted.lines.join(' ') }
-  }
   return withStop(next, stop!)
 }
 
@@ -317,9 +325,9 @@ export function explore(v: Valley, s: RunState, x: number, z: number, hours: num
   if (s.status !== 'playing') return s
   const moved = Math.hypot(x - s.x, z - s.z)
   revealAround(v.map, s.fog, x, z, 120)
-  const won = Math.hypot(x - v.village.x, z - v.village.z) < VILLAGE_RADIUS
+  const won = Math.hypot(x - v.village.x, z - v.village.z) < goalReach(v)
   const minutes = Math.round(hours * 60)
-  const spotted = spotClues(v, s)
+  const spotted = spotClues(v, s, x, z)
   s = spotted.state
   const stop: Stop = won
     ? { kind: 'village', message: goalFound(v) }
@@ -345,7 +353,7 @@ export function climb(v: Valley, s: RunState): { state: RunState; stop: Stop } {
   const rel = (heightAt(v.map, s.x, s.z) - v.map.minHeight) / (v.map.maxHeight - v.map.minHeight)
   const radius = 1500 + rel * 3500
   revealViewshed(v.map, s.fog, s.x, s.z, 15, radius)
-  const spotted = spotClues(v, s)
+  const spotted = spotClues(v, s, s.x, s.z)
   s = spotted.state
   const clueText = spotted.lines.length ? ` ${spotted.lines.join(' ')}` : ''
   const hour = s.hour + 1

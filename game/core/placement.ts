@@ -205,3 +205,36 @@ export function anchorIn(t: Terrain, x: number, z: number, rotation: number, mar
   if (Math.abs(lx) > t.size / 2 - margin || Math.abs(lz) > t.size / 2 - margin) return null
   return { x: lx, y: heightAt(t, lx, lz), z: lz, rotation }
 }
+
+/**
+ * A flat, dry spot to appear on in the 3D tile, as close as possible to (x0, z0) (tile-local):
+ * gentle ground, no drop within 10 m, away from water, trunks and rocks. Never on a mountainside.
+ */
+export function safeSpawn(t: Terrain, field: HeightField, veg: Vegetation, x0: number, z0: number): { x: number; z: number } {
+  const half = t.size / 2 - 40
+  const blockers = [...veg.conifers, ...veg.broadleaves, ...veg.rocks]
+  const ok = (x: number, z: number) => {
+    if (Math.abs(x) > half || Math.abs(z) > half) return false
+    if (slopeAt(t, x, z) > 0.18) return false
+    const h0 = heightAt(t, x, z)
+    for (let a = 0; a < 8; a++) {
+      const r = (a * Math.PI) / 4
+      if (Math.abs(heightAt(t, x + Math.cos(r) * 10, z + Math.sin(r) * 10) - h0) > 2) return false
+      if (field.water(x + t.centerX + Math.cos(r) * 6, z + t.centerZ + Math.sin(r) * 6) > -Infinity) return false
+    }
+    if (field.water(x + t.centerX, z + t.centerZ) > -Infinity) return false
+    for (const b of blockers) if (Math.abs(b.x - x) < 4 && Math.abs(b.z - z) < 4) return false
+    return true
+  }
+  // spiral outwards, 4 m steps, up to ~350 m
+  for (let r = 0; r <= 350; r += 4) {
+    const steps = r === 0 ? 1 : Math.ceil((2 * Math.PI * r) / 4)
+    for (let k = 0; k < steps; k++) {
+      const a = (k / steps) * Math.PI * 2
+      const x = x0 + Math.cos(a) * r
+      const z = z0 + Math.sin(a) * r
+      if (ok(x, z)) return { x, z }
+    }
+  }
+  return { x: x0, z: z0 }
+}

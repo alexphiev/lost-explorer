@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { randomSeed } from '@/game/core/rng'
 import { levelById } from '@/game/core/levels'
 import { MAP_SEGMENTS } from '@/game/core/valley'
-import { useClock, useJourney } from '@/game/state/journey'
+import { sceneSnapshot, useClock, useJourney } from '@/game/state/journey'
 import { clearRun, loadProgress, loadRun, recordWin, saveRun } from '@/game/state/save'
 import { useSettings } from '@/game/state/settings'
 import MapView from '@/game/map/MapView'
@@ -18,8 +18,10 @@ const Scene = dynamic(() => import('@/game/world/Scene'), {
 const FOG_LENGTH = (MAP_SEGMENTS + 1) * (MAP_SEGMENTS + 1)
 
 function persist() {
-  const { level, valley, run, bearing, layer, sceneCenter } = useJourney.getState()
-  if (!valley || !run || run.status !== 'playing') return
+  const { level, valley, run: live, bearing, layer, sceneCenter } = useJourney.getState()
+  if (!valley || !live || live.status !== 'playing') return
+  // on foot in 3D the run only settles when you leave: save the live position, time, cold and falls
+  const run = layer === 'scene' ? (sceneSnapshot() ?? live) : live
   saveRun({ level, seed: valley.seed, run, bearing, seconds: useClock.getState().seconds, layer, sceneCenter, savedAt: Date.now() })
 }
 
@@ -73,10 +75,15 @@ export default function Game() {
       if (++ticks % 5 === 0) persist()
     }, 1000)
     const onHide = () => persist()
+    const onVisibility = () => {
+      if (document.hidden) persist()
+    }
     window.addEventListener('pagehide', onHide)
+    document.addEventListener('visibilitychange', onVisibility)
     return () => {
       window.clearInterval(id)
       window.removeEventListener('pagehide', onHide)
+      document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [ready])
 

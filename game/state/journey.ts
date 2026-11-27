@@ -40,6 +40,29 @@ interface Journey {
   leaveScene: (localX: number, localZ: number, seconds: number, climbed: boolean) => void
 }
 
+/** The run as it would be on leaving the 3D scene now: position, time spent, cold and falls committed. */
+function settleScene(valley: Valley, run: RunState, center: Point, localX: number, localZ: number, seconds: number): RunState {
+  let next = explore(valley, run, center.x + localX, center.z + localZ, (seconds * SCENE_TIME_SCALE) / 3600)
+  // cold water drained energy while exploring
+  const cold = runStore.getState().coldLoss
+  if (cold > 0) next = { ...next, energy: Math.max(0, next.energy - cold) }
+  // falls hurt while exploring
+  const injury = runStore.getState().injury
+  if (injury > 0) next = { ...next, health: Math.max(0, next.health - injury) }
+  return next
+}
+
+/** For the save while on foot in 3D: the live scene progress folded into the run (the scene itself keeps going). */
+export function sceneSnapshot(): RunState | null {
+  const { valley, run, sceneCenter, layer } = useJourney.getState()
+  if (!valley || !run || !sceneCenter || layer !== 'scene') return null
+  const r = runStore.getState()
+  if (!r.sceneEnteredAt) return null
+  const next = settleScene(valley, run, sceneCenter, r.playerPosition.x, r.playerPosition.z, (performance.now() - r.sceneEnteredAt) / 1000)
+  // still on foot: a win is settled by the scene itself
+  return next.status === 'playing' ? next : null
+}
+
 export const useJourney = create<Journey>((set, get) => ({
   level: null,
   valley: null,
@@ -80,14 +103,8 @@ export const useJourney = create<Journey>((set, get) => ({
   leaveScene: (localX, localZ, seconds, climbed) => {
     const { valley, run, sceneCenter } = get()
     if (!valley || !run || !sceneCenter) return
-    let next = explore(valley, run, sceneCenter.x + localX, sceneCenter.z + localZ, (seconds * SCENE_TIME_SCALE) / 3600)
-    // cold water drained energy while exploring
-    const cold = runStore.getState().coldLoss
-    if (cold > 0) next = { ...next, energy: Math.max(0, next.energy - cold) }
+    let next = settleScene(valley, run, sceneCenter, localX, localZ, seconds)
     runStore.getState().coldLoss = 0
-    // falls hurt while exploring
-    const injury = runStore.getState().injury
-    if (injury > 0) next = { ...next, health: Math.max(0, next.health - injury) }
     runStore.getState().injury = 0
     if (climbed && next.status === 'playing') next = climb(valley, next).state
     set({ run: next, layer: 'map', sceneCenter: null })

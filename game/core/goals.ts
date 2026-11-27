@@ -13,6 +13,8 @@ export interface GoalDef {
   visibleFar: boolean
   /** chimneys: smoke can be spotted from a viewpoint or on the way */
   smoke: boolean
+  /** metres: how close you must get to finish the level (on the map, or by pressing M in 3D) */
+  reach: number
 }
 
 export const GOALS: Record<GoalKind, GoalDef> = {
@@ -22,6 +24,7 @@ export const GOALS: Record<GoalKind, GoalDef> = {
     found: 'Rooftops, a barking dog, a road. You made it to the village!',
     visibleFar: true,
     smoke: true,
+    reach: 120,
   },
   cabin: {
     name: "Forester's cabin",
@@ -29,6 +32,7 @@ export const GOALS: Record<GoalKind, GoalDef> = {
     found: 'A low cabin in a clearing, a woodpile under the eaves, a radio on the table. It still works. You are saved!',
     visibleFar: false,
     smoke: false,
+    reach: 30,
   },
   boat: {
     name: 'Moored boat',
@@ -36,6 +40,7 @@ export const GOALS: Record<GoalKind, GoalDef> = {
     found: 'A rowing boat tied to an alder, oars inside. Downstream, the river leads home. You are saved!',
     visibleFar: false,
     smoke: false,
+    reach: 30,
   },
   cave: {
     name: "Shepherds' cave",
@@ -43,6 +48,7 @@ export const GOALS: Record<GoalKind, GoalDef> = {
     found: 'Under the cliff, a hollow with an old fire ring and a bedroll. A map scratched on the rock shows the trail down. You are saved!',
     visibleFar: false,
     smoke: false,
+    reach: 30,
   },
   hut: {
     name: 'Fishing hut',
@@ -50,6 +56,7 @@ export const GOALS: Record<GoalKind, GoalDef> = {
     found: 'A hut on stilts and a little jetty, nets drying, a boat engine under a tarp. You are saved!',
     visibleFar: false,
     smoke: false,
+    reach: 30,
   },
 }
 

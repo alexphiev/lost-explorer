@@ -213,6 +213,8 @@ const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a))
 const ease = (current: number, target: number, k: number, dt: number) =>
   Math.abs(target - current) > 3 ? target : damp(current, target, k, dt)
 
+const SPAWN_GRACE_MS = 4000
+
 export default function Player({
   spawn,
   terrain,
@@ -256,6 +258,7 @@ export default function Player({
   const ankles = [useRef<THREE.Group>(null), useRef<THREE.Group>(null)]
   // ecctrl drives walking; climbing / mantling / swimming drive the body directly (toggled on mode changes only)
   const [ecctrlOn, setEcctrlOn] = useState(true)
+  const bornAt = useRef(performance.now())
   const s = useRef({
     mode: 'ground' as Mode,
     climb: 'terrain' as ClimbKind,
@@ -622,7 +625,8 @@ export default function Player({
       g.fallZ = P.z
       g.steepTime = 0
       const cur = Math.max(0, health - run.injury)
-      const d = Math.min(cur, Math.round(damage))
+      // the first seconds after appearing never hurt (settling onto the ground)
+      const d = performance.now() - bornAt.current < SPAWN_GRACE_MS ? 0 : Math.min(cur, Math.round(damage))
       g.fallDur = kind === 0 ? 1.5 + d * 0.03 : 1.4 + Math.min(1.6, d * 0.025)
       run.injury += d
       g.fallMsg = d > 0 ? `${msg}  ·  −${d} health` : msg

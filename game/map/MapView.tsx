@@ -4,7 +4,7 @@ import { useClock, useJourney } from '@/game/state/journey'
 import { DAYS_ALLOWED, HURT, bearingTo, compassName, formatHour } from '@/game/core/travel'
 import { levelById, LEVELS } from '@/game/core/levels'
 import { MAP_SIZE } from '@/game/core/valley'
-import { FOG_NEAR, FOG_UNSEEN, fogAt } from '@/game/core/viewshed'
+import { FOG_UNSEEN, fogAt } from '@/game/core/viewshed'
 import { GOALS } from '@/game/core/goals'
 import { randomSeed } from '@/game/core/rng'
 import { formatDuration } from '@/game/state/save'
@@ -135,7 +135,7 @@ export default function MapView() {
     // the goal: villages show from afar, small places only once seen up close (or reached)
     const g = valley.goal
     const gf = fogAt(valley.map, run.fog, g.x, g.z)
-    if (run.marks.some((m) => m.kind === 'village') || (GOALS[g.kind].visibleFar ? gf !== FOG_UNSEEN : gf === FOG_NEAR)) {
+    if (run.marks.some((m) => m.kind === 'village') || (GOALS[g.kind].visibleFar ? gf !== FOG_UNSEEN : !!run.goalSeen)) {
       pin(g.kind, g.x, g.z, GOALS[g.kind].name, 'Reach it to finish the level')
     }
 
@@ -279,7 +279,7 @@ export default function MapView() {
   const goal = GOALS[valley.goal.kind]
   const goalSeen = run.marks.some((m) => m.kind === 'village') || (() => {
     const f = fogAt(valley.map, run.fog, valley.goal.x, valley.goal.z)
-    return goal.visibleFar ? f !== FOG_UNSEEN : f === FOG_NEAR
+    return goal.visibleFar ? f !== FOG_UNSEEN : !!run.goalSeen
   })()
   if (goalSeen) seenKinds.add(valley.goal.kind)
   const legend = (Object.keys(MARKER_NAME) as MarkerKind[]).filter((kd) => seenKinds.has(kd) && kd !== 'village')

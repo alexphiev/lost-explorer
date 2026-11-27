@@ -8,7 +8,7 @@ import { useSettings } from '@/game/state/settings'
 import { runStore } from '@/game/state/run'
 import { SCENE_TIME_SCALE, useJourney } from '@/game/state/journey'
 import { heightAt, sampleTile } from '@/game/core/terrain'
-import { anchorIn, placeDecor, placeVegetation, placeVillage } from '@/game/core/placement'
+import { anchorIn, safeSpawn, placeDecor, placeVegetation, placeVillage } from '@/game/core/placement'
 import { DAYS_ALLOWED, formatHour, HURT } from '@/game/core/travel'
 import type { Point, Valley } from '@/game/core/valley'
 import type { WaterSample } from '@/game/core/rivers'
@@ -40,13 +40,23 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
     return run?.health ?? 100
   })
   const [enteredAt] = useState(() => performance.now())
+  useEffect(() => {
+    runStore.getState().sceneEnteredAt = enteredAt
+    return () => {
+      runStore.getState().sceneEnteredAt = 0
+    }
+  }, [enteredAt])
   const [elapsed, setElapsed] = useState(0)
 
   const world = useMemo(() => {
     const terrain = sampleTile(valley.field, center.x, center.z)
+    const vegetation = placeVegetation(terrain, valley.field, valley.seed)
+    // appear where you stood on the map, or the nearest flat, safe ground
+    const run = useJourney.getState().run
+    const at = safeSpawn(terrain, valley.field, vegetation, (run?.x ?? center.x) - center.x, (run?.z ?? center.z) - center.z)
     return {
       terrain,
-      vegetation: placeVegetation(terrain, valley.field, valley.seed),
+      vegetation,
       decor: placeDecor(terrain, valley.field, valley.seed),
       houses: valley.goal.kind === 'village' ? placeVillage(terrain, valley.field, valley.seed, valley.village.x, valley.village.z) : [],
       goal: valley.goal.kind === 'village' ? null : anchorIn(terrain, valley.goal.x, valley.goal.z, valley.goal.rotation),
@@ -54,7 +64,7 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
         const at = anchorIn(terrain, c.x, c.z, Math.PI / 2 - (c.bearing * Math.PI) / 180, 5)
         return at ? [{ kind: c.kind, at }] : []
       }),
-      spawn: [0, heightAt(terrain, 0, 0) + 1.5, 0] as [number, number, number],
+      spawn: [at.x, heightAt(terrain, at.x, at.z) + 1.2, at.z] as [number, number, number],
     }
   }, [valley, center])
 
