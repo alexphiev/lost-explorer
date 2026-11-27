@@ -120,6 +120,7 @@ User playtest of the menu, map markers and resume. Then #29/#30 when a database 
 None.
 
 ## Decisions (one line each)
+- **Redesign (2026-11-27): travel only on foot in one continuous 3D valley; the map is a tool. See `docs/redesign-3d-only.md`.**
 - Local save in localStorage, not a cookie: the fog of war alone is ~22 KB (cookies cap at 4 KB) and nothing needs to reach a server yet.
 - Footstep sounds create a few one-shot Web Audio nodes per step from the frame loop: Web Audio nodes can't be reused; it is a handful per second, not per frame.
 - The 3D scene is kept alive behind the map rather than rebuilt: exact position, decor and camera, at the cost of keeping its GPU resources while on the map.
