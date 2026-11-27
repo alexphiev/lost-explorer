@@ -5,7 +5,7 @@ import * as THREE from 'three/webgpu'
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js'
 import { runStore } from '@/game/state/run'
 import { atmosphereFog } from '@/game/render/tsl/atmosphere'
-import { createSunState, sunState } from './daylight'
+import { createSunState, sunState } from './sunState'
 
 const DISTANCE = 150
 const SRGB = THREE.SRGBColorSpace
