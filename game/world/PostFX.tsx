@@ -17,7 +17,8 @@ export default function PostFX() {
     const col = scenePass.getTextureNode('output')
     // bloom only on what is really bright, and cap that energy: the sun gets a crisp disc and a soft halo
     // instead of a white veil over half the screen (the sky near the sun is extremely bright HDR)
-    const glow = bloom(min(col, vec4(3, 3, 3, 1)), 0.22, 0.3, 1.1)
+    // small and tight (games keep sun glare subtle): low strength, short radius
+    const glow = bloom(min(col, vec4(2, 2, 2, 1)), 0.12, 0.15, 1.2)
     const vignette = float(1).sub(screenUV.sub(0.5).length().mul(1.15).pow(2.5)).clamp(0, 1)
     const grade = vec3(1.03, 1.0, 0.95) // gentle warm grade
     p.outputNode = col.add(glow).mul(vec3(grade)).mul(vignette.mul(0.35).add(0.65))
