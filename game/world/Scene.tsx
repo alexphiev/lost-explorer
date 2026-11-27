@@ -18,6 +18,7 @@ import Terrain from './Terrain'
 import Vegetation, { rockSquash, ROCK_SINK, TREE_SINK } from './Vegetation'
 import Player, { CLIMB_STRIDE, HAZARD_STRIDE, keyboardMap, type PlayerHud } from './Player'
 import Water from './Water'
+import SoundScape from './SoundScape'
 import Daylight, { DaylightFog, SUN_DIR } from './Daylight'
 import PostFX from './PostFX'
 import Village from './Village'
@@ -78,6 +79,7 @@ function Compass({ strip, bearing }: { strip: React.RefObject<HTMLDivElement | n
  */
 export default function Scene({ valley, center, active }: { valley: Valley; center: Point; active: boolean }) {
   const forceWebGL = useSettings((s) => s.forceWebGL)
+  const muted = useSettings((s) => s.muted)
   const run = useJourney((s) => s.run)
   const leaveScene = useJourney((s) => s.leaveScene)
   const hud = useRef<PlayerHud>({ prompt: null, grip: null, gripBox: null, warmth: null, warmthBox: null })
@@ -165,6 +167,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
   useEffect(() => {
     if (!active) return
     const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'n') return useSettings.getState().setMuted(!useSettings.getState().muted)
       if (e.key.toLowerCase() !== 'm') return
       const p = runStore.getState().playerPosition
       leaveScene(p.x, p.z, (performance.now() - enteredAt) / 1000, false)
@@ -279,6 +282,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
               <ClueProp key={i} kind={c.kind} at={c.at} />
             ))}
             <Water field={valley.field} tile={t} />
+            <SoundScape field={valley.field} tile={t} active={active} getHour={getHour} />
             <Player
               spawn={world.spawn}
               terrain={t}
@@ -307,6 +311,13 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
         )}
         <div className="text-xs text-white/70">ZQSD/WASD/arrows · Shift run · Space jump · drag to look</div>
         <div className="text-xs text-white/90">Walk into a steep slope or a rock to climb · E climb a tree · M back to the map</div>
+        <button
+          className="pointer-events-auto mt-1 rounded bg-white/15 px-2 py-0.5 text-xs hover:bg-white/25"
+          onClick={() => useSettings.getState().setMuted(!muted)}
+          title="N: sound on / off"
+        >
+          {muted ? '🔇 sound off' : '🔊 sound on'} <span className="text-white/60">(N)</span>
+        </button>
       </div>
       {/* contextual prompt + grip (climbing stamina), written directly by Player */}
       <div className="pointer-events-none absolute bottom-10 left-1/2 flex w-72 -translate-x-1/2 flex-col items-center gap-2 font-mono text-sm text-white">

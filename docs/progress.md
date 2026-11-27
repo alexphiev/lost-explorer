@@ -98,8 +98,12 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] 3D compass: heading strip at the top (camera yaw, updated in the frame loop without re-render), amber mark = bearing chosen on the map
 - [ ] Accounts + database (#29), per-level leaderboard (#30)
 
+## Water look + sounds (issue #32)
+- [x] Water: deeper blue, less transparent (0.9–0.98), rolling swell moving the surface (lakes as subdivided rings, stream ribbons 5 vertices across), crests, foam on fast water; rings and churned water spreading from the player while wading/swimming (shared `wakeAt`/`wakeStrength` uniforms)
+- [x] Sounds (Web Audio, synthesised, `game/world/audio.ts` + `SoundScape.tsx`): footsteps on each half gait cycle by ground (grass, rock/scree, water) and pace, swim strokes, climbing knocks; stream babble / river rush by distance and current; wind by height with gusts; birds by day. Starts on first input, suspended behind the map, mute button / N (kept in localStorage)
+
 ## Current task
-None. Levels/local save done.
+None. Water + sounds done, waiting for playtest.
 
 ## Next action
 User playtest of the menu, map markers and resume. Then #29/#30 when a database is wanted.
@@ -109,6 +113,7 @@ None.
 
 ## Decisions (one line each)
 - Local save in localStorage, not a cookie: the fog of war alone is ~22 KB (cookies cap at 4 KB) and nothing needs to reach a server yet.
+- Footstep sounds create a few one-shot Web Audio nodes per step from the frame loop: Web Audio nodes can't be reused; it is a handful per second, not per frame.
 - The 3D scene is kept alive behind the map rather than rebuilt: exact position, decor and camera, at the cost of keeping its GPU resources while on the map.
 - Level links are plain `<a>` (full reload): the game store and the WebGPU scene start clean for each level.
 - TypeScript pinned to 5.9.3 (TS 7 is the native port; Next 16 tooling targets 5.x).
