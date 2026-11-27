@@ -1,6 +1,6 @@
 # Progress — MVP
 
-Branches: `step-1`, `step-1.5` (merged in #2), `step-2` (current)
+Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (current)
 
 ## Definition of done
 - [x] Next.js 16 + React 19.2 + TypeScript + Tailwind, exact versions pinned
@@ -36,11 +36,20 @@ Branches: `step-1`, `step-1.5` (merged in #2), `step-2` (current)
 - [x] 3D physics: tree + rock colliders, visual triangles match the Rapier heightfield, max climbable slope, respawn if fallen
 - [x] `npm run build` + Chromium smoke (/play and /map), PR opened
 
+## Step 3 — 3D stop scene + layer switch
+- [ ] core: sample a 1 km 3D tile around any world position (same height field as the map)
+- [ ] core: vegetation placed per 250 m world chunk (same place → same trees), scrub bushes where the map has scrub, village houses
+- [ ] core/travel: `explore` (3D moves + time spent written back to the run)
+- [ ] state: layer 'map' | 'scene', enterScene / leaveScene
+- [ ] /play = map + 3D: "Explore on foot" from the map; in 3D, E = climb (near a tree/rock), M = back to map; 1 real s = 20 game s
+- [ ] 3D: bushes + houses with colliders; HUD (day, time, energy, hints)
+- [ ] /map route folded into /play; smoke script updated; build; PR
+
 ## Current task
-None. Step 2 done, PR open. Do not start step 3 without the user.
+Step 3.
 
 ## Next action
-User playtest of /map (is choosing where to go fun?) and of the 3D collisions; then step 3 (3D stop scene generated at the map position + switch between layers).
+Core: tile sampling + chunked placement.
 
 ## Blockers
 None.
