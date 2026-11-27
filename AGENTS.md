@@ -20,6 +20,7 @@ MVP = build order in `docs/tech-architecture.md` §15, steps 1–3: WebGPU spike
 
 - Don't write unit, e2e or snapshot tests. Don't set up Vitest or Playwright. Ignore the testing sections in the docs for now.
 - Verify with `npm run build` (type-check + build) only, once at the end of a task, not after every edit.
+- Don't run `scripts/smoke.cjs` or any other headless-browser check (Playwright/Chromium scenarios, screenshots) unless the user explicitly asks for it in the current task. They are slow (software rendering, ~3 fps) and don't reflect real feel; the user's playtests are the validation.
 
 ## Token budget
 
