@@ -9,7 +9,8 @@ import { heightAt, type Terrain } from '@/game/core/terrain'
 import { createWaterSample, type WaterSample } from '@/game/core/rivers'
 import { runStore } from '@/game/state/run'
 import { bodyDropFor, footAlongCycle, HIP_Y, solveLeg, slopeSpeedFactor, strideLength, THIGH, type FootTarget, type LegAngles } from './gait'
-import { climbPose, createPose, mantlePose, scrambleArms, swimPose } from './poses'
+import { climbPose, createPose, fallPose, mantlePose, scrambleArms, swimPose } from './poses'
+import { HURT } from '@/game/core/travel'
 
 export type Controls = 'forward' | 'backward' | 'leftward' | 'rightward' | 'jump' | 'run'
 
@@ -49,6 +50,9 @@ export type Occluders = Float32Array
 /** Climbables: flat [x, z, yGround, yTop, climbRadius, type] (type 0 = rock, 1 = tree). */
 export type Climbables = Float32Array
 export const CLIMB_STRIDE = 6
+/** Trip hazards: flat [x, z, yGround, yTop, radius, type, axisX, axisZ, halfLength] (type 0 trunk, 1 rock, 2 stump, 3 log). */
+export type Hazards = Float32Array
+export const HAZARD_STRIDE = 9
 
 export interface PlayerHud {
   prompt: HTMLDivElement | null
@@ -63,7 +67,15 @@ const COLD_SWIM = 0.22
 const COLD_CURRENT = 0.12
 const COLD_WADE = 0.04
 
-type Mode = 'ground' | 'climb' | 'mantle' | 'swim'
+/** Falls (issue #19) */
+const RUN_FALL_SPEED = 4.3 // m/s: only running trips you (walk tops out ~2.8 downhill)
+const STEEP_RUN_GRADE = -0.55 // running down ground steeper than this (~29°) → you lose your footing
+const HARD_LANDING = 2 // m dropped below where the jump / fall started
+const LOG_TRIP_CHANCE = 0.4 // per log run across
+const WET_SLIP_RATE = 0.5 // per second running through a stream
+const FALL_SAFE = 1.2 // s after getting up before you can trip again
+
+type Mode = 'ground' | 'climb' | 'mantle' | 'swim' | 'fallen'
 type ClimbKind = 'terrain' | 'rock' | 'tree'
 
 // ---- reused every frame (no allocation in the loop) ----
@@ -142,9 +154,11 @@ export default function Player({
   terrain,
   occluders,
   climbables,
+  hazards,
   waterAt,
   streamAt,
   energy,
+  health,
   hud,
   onLookAround,
 }: {
@@ -152,12 +166,15 @@ export default function Player({
   terrain: Terrain
   occluders: Occluders
   climbables: Climbables
+  hazards: Hazards
   /** water surface height at local (x, z), −Infinity if dry */
   waterAt: (x: number, z: number) => number
   /** stream / river at local (x, z): fills `out` with its current */
   streamAt: (x: number, z: number, out: WaterSample) => boolean
   /** energy when the scene started (cold water drains it, see runStore.coldLoss) */
   energy: number
+  /** health when the scene started (falls hurt, see runStore.injury) */
+  health: number
   hud: React.RefObject<PlayerHud>
   onLookAround: () => void
 }) {
@@ -210,6 +227,20 @@ export default function Player({
     gripShown: -1,
     warmthShown: -1,
     coldTime: 0, // seconds in cold water (for the first warning)
+    // falls
+    fallT: 0,
+    fallDur: 1.6,
+    fallKind: 0, // 0 trip forward, 1 crumple (hard landing)
+    fallVx: 0,
+    fallVz: 0,
+    fallGround: -Infinity, // standing on a rock / log when it happened
+    fallFromY: spawn[1], // body height where the current jump / fall started
+    fallMsg: '',
+    msgTime: 0, // keep the fall message up a moment after getting up
+    safeT: 0,
+    prevHv: 0,
+    steepTime: 0,
+    lastLog: -1,
   })
   const [, getKeys] = useKeyboardControls<Controls>()
   const [debugLog] = useState(() => new URLSearchParams(window.location.search).has('debug'))
@@ -262,7 +293,9 @@ export default function Player({
     input.leftward = focused && k.leftward
     input.rightward = focused && k.rightward
     input.jump = focused && k.jump
-    input.run = focused && k.run
+    const hp = health - runStore.getState().injury
+    const hurt = hp < HURT
+    input.run = focused && k.run && !hurt // too hurt to run
     const jumpPressed = input.jump && !g.jumpHeld
     g.jumpHeld = input.jump
     const ePressed = g.ePressed
@@ -291,6 +324,7 @@ export default function Player({
     // safety net: fell through or out of the world → back to spawn
     if (P.y < terrain.minHeight - 30) {
       toGround()
+      g.fallFromY = spawn[1]
       rb.setTranslation({ x: spawn[0], y: spawn[1], z: spawn[2] }, true)
       rb.setLinvel({ x: 0, y: 0, z: 0 }, true)
       return
@@ -337,7 +371,12 @@ export default function Player({
       if (g.mode === 'ground') return
       e!.collider?.setCollisionGroups(COLLIDE_ALL)
       if (debugLog) console.info(`[mode] ${g.mode} → ground (grip ${g.grip.toFixed(2)}) P.y ${P.y.toFixed(2)} ground ${hC.toFixed(2)} water ${water.toFixed(2)} climbY ${g.climbY.toFixed(2)} upDown ${upDown}`)
+      if (g.mode === 'fallen') {
+        g.msgTime = 2.5
+        g.safeT = FALL_SAFE
+      }
       g.mode = 'ground'
+      g.fallFromY = P.y // a jump off a wall / tree, or a slip, starts here
       rb!.setGravityScale(1, true)
       setEcctrlOn(true)
     }
@@ -413,7 +452,84 @@ export default function Player({
             g.climbY = P.y
           }
         }
+        if (hurt && anyMove && focused && k.run) prompt = 'Too hurt to run'
       }
+      // ---- falls while running: into a trunk / rock / stump, over a log, down a steep slope, on wet stones ----
+      g.safeT -= dt
+      const vel = e.currLinVel
+      const hv = Math.hypot(vel.x, vel.z)
+      const speedNow = Math.max(hv, g.prevHv) // hitting a trunk stops you dead: use last frame's speed too
+      g.prevHv = hv
+      const running = g.mode === 'ground' && grounded && speedNow > RUN_FALL_SPEED && g.safeT <= 0
+      let nearLog = -1
+      if (running) {
+        for (let o = 0, i = 0; o < hazards.length; o += HAZARD_STRIDE, i++) {
+          const dx = hazards[o] - P.x
+          const dz = hazards[o + 1] - P.z
+          if (Math.abs(dx) > 5 || Math.abs(dz) > 5) continue
+          const type = hazards[o + 5]
+          const r = hazards[o + 4]
+          const rise = hazards[o + 3] - feet
+          if (type === 3) {
+            // log: distance to its axis segment
+            const ax = hazards[o + 6]
+            const az = hazards[o + 7]
+            const t = clamp(-(dx * ax + dz * az), -hazards[o + 8], hazards[o + 8])
+            const qx = -dx - ax * t
+            const qz = -dz - az * t
+            if (rise > 0.1 && Math.hypot(qx, qz) < r + 0.35) nearLog = i
+            continue
+          }
+          if (type === 1 && (rise < 0.15 || rise > 0.7)) continue // big rocks are climbed, pebbles stepped on
+          if (type === 2 && rise < 0.12) continue
+          const d = Math.hypot(dx, dz) || 1e-3
+          if (d - r - 0.3 > 0.25 || (dx * fwd.x + dz * fwd.z) / d < 0.75) continue
+          if (type === 0) startFall(0, 4 + speedNow * 0.6 + Math.random() * 2, -fwd.x * 1.2, -fwd.z * 1.2, 'You run straight into a tree trunk')
+          else if (type === 1) startFall(0, 3 + speedNow * 0.4 + Math.random() * 2, fwd.x * speedNow * 0.35, fwd.z * speedNow * 0.35, 'You catch your foot on a rock and go sprawling')
+          else startFall(0, 3 + speedNow * 0.3 + Math.random() * 2, fwd.x * speedNow * 0.35, fwd.z * speedNow * 0.35, 'You trip over a stump')
+          break
+        }
+      }
+      if (nearLog !== g.lastLog) {
+        // one roll per log you run across (walking over them is fine)
+        if (nearLog >= 0 && g.mode === 'ground' && Math.random() < LOG_TRIP_CHANCE) {
+          startFall(0, 3 + Math.random() * 3, fwd.x * speedNow * 0.35, fwd.z * speedNow * 0.35, 'Your boot catches on a fallen log')
+        }
+        g.lastLog = nearLog
+      }
+      if (g.mode === 'ground') {
+        // running down ground that is too steep: you lose your footing after a moment
+        let grade = 0
+        if (hv > 0.5) {
+          const ux = vel.x / hv
+          const uz = vel.z / hv
+          grade = (heightAt(terrain, P.x + ux, P.z + uz) - heightAt(terrain, P.x - ux, P.z - uz)) / 2
+        }
+        if (running && grade < STEEP_RUN_GRADE) g.steepTime += dt
+        else g.steepTime = Math.max(0, g.steepTime - dt * 2)
+        if (g.steepTime > 0.35 && Math.random() < dt * 3) {
+          startFall(0, 4 + Math.random() * 4, fwd.x * speedNow * 0.5, fwd.z * speedNow * 0.5, 'Too steep to run: your legs run away from you and you tumble')
+        } else if (running && water - feet > 0.05 && water - feet < 0.9 && Math.random() < dt * WET_SLIP_RATE) {
+          startFall(0, 3 + Math.random() * 3, fwd.x * speedNow * 0.3, fwd.z * speedNow * 0.3, 'You slip on a wet stone')
+        }
+      }
+    }
+
+    function startFall(kind: number, damage: number, vx: number, vz: number, msg: string) {
+      const grounded = e!.isOnGround
+      toCustom('fallen')
+      g.fallKind = kind
+      g.fallT = 0
+      g.fallVx = vx
+      g.fallVz = vz
+      g.fallGround = grounded && e!.standPoint.y > hC + 0.2 ? e!.standPoint.y : -Infinity
+      g.steepTime = 0
+      const cur = Math.max(0, health - run.injury)
+      const d = Math.min(cur, Math.round(damage))
+      g.fallDur = kind === 0 ? 1.5 + d * 0.03 : 1.4 + Math.min(1.6, d * 0.025)
+      run.injury += d
+      g.fallMsg = d > 0 ? `${msg}  ·  −${d} health` : msg
+      if (debugLog) console.info(`[fall] ${msg} −${d}`)
     }
 
     if (g.mode === 'climb') {
@@ -518,6 +634,18 @@ export default function Player({
       if (t >= 1) toGround()
     }
 
+    if (g.mode === 'fallen') {
+      g.fallT = Math.min(1, g.fallT + dt / g.fallDur)
+      // skid to a stop along the ground (or bounce back off a trunk)
+      g.fallVx = damp(g.fallVx, 0, 3, dt)
+      g.fallVz = damp(g.fallVz, 0, 3, dt)
+      const gy = Math.max(hC, g.fallGround) + ROOT_TO_FEET
+      setBody(g.fallVx, clamp(follow(gy - P.y, 0.5), -6, 2), g.fallVz, g.yaw)
+      prompt = g.fallMsg
+      if (water - hC > SWIM_DEPTH) toCustom('swim')
+      else if (g.fallT >= 1) toGround()
+    }
+
     let crawl = 0
     if (g.mode === 'swim' && !(water - hC > SWIM_DEPTH - 0.2)) {
       // wade out where it gets shallow (or the lake ends: water = −Infinity) before any swim target is computed
@@ -558,6 +686,7 @@ export default function Player({
 
     // ================= poses =================
     let kJoints = 45
+    let hardDrop = 0 // set by groundGait on landing
     const runBlend0 = g.mode === 'ground' ? clamp((e.moveSpeed - 2.3) / 1.5, 0, 1) : 0
     if (g.mode === 'ground') {
       groundGait()
@@ -569,6 +698,10 @@ export default function Player({
       mantlePose(g.mantleT, pose)
       g.bodyY = damp(g.bodyY, pose.bodyY, 14, dt)
       kJoints = 16
+    } else if (g.mode === 'fallen') {
+      fallPose(g.fallT, g.fallKind, pose)
+      g.bodyY = damp(g.bodyY, pose.bodyY, 12, dt)
+      kJoints = 12
     } else {
       swimPose(g.phase, crawl, time, pose)
       g.bodyY = damp(g.bodyY, 0, 6, dt)
@@ -598,7 +731,8 @@ export default function Player({
       // ecctrl pushes each frame by Δv = accDeltaTime · slideFriction · (vmax − v); an extra impulse
       // −b·v with b = k·(1/f − 1) (k = that same gain) settles the speed at exactly f · vmax
       // (b < 0 is a push, for the faster descents).
-      g.slopeF = damp(g.slopeF, slopeSpeedFactor(grade) * (1 - 0.5 * wade), 4, dt)
+      const hurtF = hp <= 0 ? 0.55 : hurt ? 0.75 : 1 // limping
+      g.slopeF = damp(g.slopeF, slopeSpeedFactor(grade) * (1 - 0.5 * wade) * hurtF, 4, dt)
       if (wade > 0.15) {
         // cold feet, and the current pushes the deeper you stand in it
         run.coldLoss += dt * COLD_WADE * wade
@@ -628,9 +762,12 @@ export default function Player({
         g.lastVy = Math.min(g.lastVy, vy)
       } else {
         if (g.airTime > 0.15) g.landing = Math.min(0.3, Math.max(0, -g.lastVy - 1.5) * 0.045)
+        hardDrop = g.airTime > 0.15 ? g.fallFromY - P.y : 0
         g.airTime = 0
         g.lastVy = 0
       }
+      // where a jump / fall starts: on the ground, or sliding slowly down a steep slope
+      if (grounded || (aboveGround < 0.6 && e!.actualSlopeAngle > 0.7 && vy > -4)) g.fallFromY = P.y
       g.landing *= Math.exp(-dt * 7)
       const sliding = aboveGround < 0.6 && (e!.actualSlopeAngle > 0.7 || (!grounded && g.airTime > 0.1 && vy < 0 && vy > -6))
       const airborne = !grounded && !sliding && g.airTime > 0.08
@@ -702,6 +839,12 @@ export default function Player({
       g.grip = Math.min(1, g.grip + dt * 0.3)
     }
 
+    if (hardDrop > HARD_LANDING) {
+      // hard landing: −5 at 2 m, rising steeply (≈ −30 at 6 m, −60 at 8 m)
+      const over = hardDrop - HARD_LANDING
+      startFall(1, 5 + 1.5 * over * over, 0, 0, hardDrop > 8 ? 'A terrible fall. Something cracks as you hit the ground' : hardDrop > 4.5 ? 'You land hard and crumple' : 'You land badly and fall')
+    }
+
     // ================= apply the pose =================
     for (let i = 0; i < 2; i++) {
       const th = thighs[i].current
@@ -739,6 +882,10 @@ export default function Player({
 
     // ================= HUD (direct DOM, only when it changes) =================
     const h = hud.current
+    if (g.msgTime > 0) {
+      g.msgTime -= dt
+      if (!prompt) prompt = g.fallMsg
+    }
     if (debugLog) prompt = `[${g.mode}${g.mode === 'climb' ? ':' + g.climb : ''}] ${prompt}`
     if (h?.prompt && prompt !== g.prompt) {
       h.prompt.textContent = prompt

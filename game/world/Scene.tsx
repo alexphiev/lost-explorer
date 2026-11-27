@@ -9,18 +9,18 @@ import { runStore } from '@/game/state/run'
 import { SCENE_TIME_SCALE, useJourney } from '@/game/state/journey'
 import { heightAt, sampleTile } from '@/game/core/terrain'
 import { placeDecor, placeVegetation, placeVillage } from '@/game/core/placement'
-import { DAYS_ALLOWED, formatHour } from '@/game/core/travel'
+import { DAYS_ALLOWED, formatHour, HURT } from '@/game/core/travel'
 import type { Point, Valley } from '@/game/core/valley'
 import type { WaterSample } from '@/game/core/rivers'
 import { HAZE_COOL } from '@/game/render/tsl/atmosphere'
 import Terrain from './Terrain'
 import Vegetation, { rockSquash, ROCK_SINK, TREE_SINK } from './Vegetation'
-import Player, { CLIMB_STRIDE, keyboardMap, type PlayerHud } from './Player'
+import Player, { CLIMB_STRIDE, HAZARD_STRIDE, keyboardMap, type PlayerHud } from './Player'
 import Water from './Water'
 import Daylight, { DaylightFog, SUN_DIR } from './Daylight'
 import PostFX from './PostFX'
 import Village from './Village'
-import Decor from './Decor'
+import Decor, { LOG_HALF, LOG_R } from './Decor'
 
 
 export default function Scene({ valley, center }: { valley: Valley; center: Point }) {
@@ -32,6 +32,11 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
   const [startEnergy] = useState(() => {
     runStore.getState().coldLoss = 0
     return run?.energy ?? 100
+  })
+  // health when you arrived; falls hurt (runStore.injury, applied when you leave)
+  const [startHealth] = useState(() => {
+    runStore.getState().injury = 0
+    return run?.health ?? 100
   })
   const [enteredAt] = useState(() => performance.now())
   const [elapsed, setElapsed] = useState(0)
@@ -118,6 +123,31 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
     return out
   }, [world])
 
+  // trip hazards: [x, z, yGround, top, radius, type, axisX, axisZ, halfLength] — type 0 trunk, 1 rock, 2 stump, 3 log
+  const hazards = useMemo(() => {
+    const v = world.vegetation
+    const d = world.decor
+    const out = new Float32Array((v.conifers.length + v.broadleaves.length + v.rocks.length + d.stumps.length + d.logs.length) * HAZARD_STRIDE)
+    let o = 0
+    const add = (x: number, z: number, y0: number, y1: number, r: number, type: number, ax: number, az: number, half: number) => {
+      out[o++] = x
+      out[o++] = z
+      out[o++] = y0
+      out[o++] = y1
+      out[o++] = r
+      out[o++] = type
+      out[o++] = ax
+      out[o++] = az
+      out[o++] = half
+    }
+    for (const it of v.conifers) add(it.x, it.z, it.y, it.y + 4 * it.scale, 0.7 * it.scale, 0, 0, 0, 0)
+    for (const it of v.broadleaves) add(it.x, it.z, it.y, it.y + 3 * it.scale, 0.35 * it.scale, 0, 0, 0, 0)
+    for (const it of v.rocks) add(it.x, it.z, it.y, it.y - ROCK_SINK * it.scale + it.scale * rockSquash(it) * 0.85, it.scale * 0.8, 1, 0, 0, 0)
+    for (const it of d.stumps) add(it.x, it.z, it.y, it.y + 0.5 * it.scale, 0.42 * it.scale, 2, 0, 0, 0)
+    for (const it of d.logs) add(it.x, it.z, it.y, it.y + 2 * LOG_R * it.scale, LOG_R * it.scale, 3, Math.cos(it.rotation), -Math.sin(it.rotation), LOG_HALF * it.scale)
+    return out
+  }, [world])
+
   // ?debug=1: expose the tile to scripts (find a tree, a rock, a cliff, a lake)
   useEffect(() => {
     if (!new URLSearchParams(window.location.search).has('debug')) return
@@ -165,6 +195,8 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
               waterAt={waterAt}
               streamAt={streamAt}
               energy={startEnergy}
+              health={startHealth}
+              hazards={hazards}
               hud={hud}
               onLookAround={onLookAround}
             />
@@ -175,7 +207,8 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
       <div className="pointer-events-none absolute right-3 top-3 rounded bg-black/50 px-3 py-2 text-right font-mono text-sm text-white">
         {run && (
           <div>
-            Day {run.day}/{DAYS_ALLOWED} · {formatHour(hour % 24)} · energy {Math.max(0, Math.round(startEnergy - runStore.getState().coldLoss))}
+            Day {run.day}/{DAYS_ALLOWED} · {formatHour(hour % 24)} · energy {Math.max(0, Math.round(startEnergy - runStore.getState().coldLoss))} ·{' '}
+            <span className={startHealth - runStore.getState().injury < HURT ? 'text-red-400' : ''}>health {Math.max(0, Math.round(startHealth - runStore.getState().injury))}</span>
             {forceWebGL && <span className="ml-2 text-amber-300">(WebGL)</span>}
           </div>
         )}
