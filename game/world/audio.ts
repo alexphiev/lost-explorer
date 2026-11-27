@@ -80,8 +80,7 @@ export function createSoundEngine(muted: boolean): SoundEngine {
       const v = (0.25 + 0.75 * loud) * 0.35 // playtest: steps were too loud
       const jitter = 0.85 + Math.random() * 0.3
       if (surface === 'water') {
-        burst(t, 0.28, 'bandpass', 800 * jitter, 0.7, 0.5 * v)
-        burst(t + 0.03, 0.18, 'highpass', 3000, 0.5, 0.12 * v)
+        burst(t, 0.25, 'lowpass', 600 * jitter, 1.5, 0.6 * v)
       } else if (surface === 'rock') {
         burst(t, 0.07, 'bandpass', 2200 * jitter, 2.5, 0.35 * v)
         thump(t, 110 * jitter, 0.25 * v)
@@ -93,9 +92,38 @@ export function createSoundEngine(muted: boolean): SoundEngine {
       }
     },
     stroke(loud) {
+      // a hand entering the water: a low, closing slosh (falling low-pass) and a couple of bubbly blips, no hiss
       const t = ctx.currentTime
-      burst(t, 0.45, 'bandpass', 650 + Math.random() * 300, 0.6, (0.35 + 0.35 * loud) * 0.5, (Math.random() - 0.5) * 0.4)
-      burst(t + 0.08, 0.3, 'highpass', 2500, 0.5, (0.08 + 0.1 * loud) * 0.5)
+      const v = 0.25 + 0.35 * loud
+      const src = ctx.createBufferSource()
+      src.buffer = noise
+      const f = ctx.createBiquadFilter()
+      f.type = 'lowpass'
+      f.Q.value = 2
+      f.frequency.setValueAtTime(900 + Math.random() * 300, t)
+      f.frequency.exponentialRampToValueAtTime(180, t + 0.35)
+      const g = ctx.createGain()
+      g.gain.setValueAtTime(0, t)
+      g.gain.linearRampToValueAtTime(v * 0.5, t + 0.04)
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4)
+      const pan = ctx.createStereoPanner()
+      pan.pan.value = (Math.random() - 0.5) * 0.5
+      src.connect(f).connect(g).connect(pan).connect(master)
+      src.start(t, Math.random() * 1.5, 0.45)
+      for (let i = 0; i < 2; i++) {
+        const bt = t + 0.05 + Math.random() * 0.15
+        const o = ctx.createOscillator()
+        const f0 = 250 + Math.random() * 350
+        o.frequency.setValueAtTime(f0, bt)
+        o.frequency.exponentialRampToValueAtTime(f0 * 2.2, bt + 0.05)
+        const og = ctx.createGain()
+        og.gain.setValueAtTime(0, bt)
+        og.gain.linearRampToValueAtTime(v * 0.06, bt + 0.005)
+        og.gain.exponentialRampToValueAtTime(0.0001, bt + 0.06)
+        o.connect(og).connect(pan)
+        o.start(bt)
+        o.stop(bt + 0.07)
+      }
     },
     setAmbient(water, rushing, w) {
       const t = ctx.currentTime
