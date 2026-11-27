@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 import { useRapier } from '@react-three/rapier'
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
@@ -97,7 +97,11 @@ export const TREE_SINK = 0.2
 /** Fixed colliders: trunks (conifers a bit wider: low branches) and rocks. Created imperatively (2 500 colliders). */
 function VegetationColliders({ data }: { data: VegetationData }) {
   const { world, rapier } = useRapier()
-  useEffect(() => {
+  // Layout effect on purpose: its cleanup runs before <Physics>' passive cleanup frees the world
+  // (StrictMode double-mount in dev, and leaving the scene). With useEffect the cleanup reached a
+  // freed/recreated world, Rapier panicked, and every later call failed with
+  // "recursive use of an object detected which would lead to unsafe aliasing in rust" (issue #6).
+  useLayoutEffect(() => {
     const body = world.createRigidBody(rapier.RigidBodyDesc.fixed())
     const trunk = (it: Instance, radius: number, height: number) => {
       const half = (height * it.scale) / 2
@@ -119,14 +123,7 @@ function VegetationColliders({ data }: { data: VegetationData }) {
     for (const it of data.bushes) {
       world.createCollider(rapier.ColliderDesc.cylinder(1.2 * it.scale, 1.5 * it.scale).setTranslation(it.x, it.y + 1.2 * it.scale - 0.3, it.z), body)
     }
-    return () => {
-      // when the whole scene unmounts, <Physics> may already have freed the world
-      try {
-        world.removeRigidBody(body)
-      } catch {
-        /* world gone: nothing to clean */
-      }
-    }
+    return () => world.removeRigidBody(body)
   }, [world, rapier, data])
   return null
 }
