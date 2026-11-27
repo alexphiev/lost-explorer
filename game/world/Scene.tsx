@@ -28,7 +28,7 @@ import SoundScape from './SoundScape'
 import Daylight, { DaylightFog, SUN_DIR } from './Daylight'
 import PostFX from './PostFX'
 import Village from './Village'
-import { CampProp, ClueProp, GoalProp } from './Landmarks'
+import { CampProp, ClueProp, GoalProp, NorthStar } from './Landmarks'
 import { campSpot, campVerdict } from '@/game/core/camp'
 import Decor, { LOG_HALF, LOG_R } from './Decor'
 
@@ -419,6 +419,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
             <Decor data={decor} />
             <Village houses={world.houses} />
             {world.goal && valley.goal.kind !== 'village' && <GoalProp kind={valley.goal.kind} at={world.goal} />}
+            <NorthStar />
             {camp && <CampProp at={{ x: camp.x - world.terrain.centerX, y: heightAt(world.terrain, camp.x - world.terrain.centerX, camp.z - world.terrain.centerZ), z: camp.z - world.terrain.centerZ, rotation: 0 }} fire={camp.fire} />}
             {world.clues.map((c, i) => (
               <ClueProp key={i} kind={c.kind} at={c.at} />

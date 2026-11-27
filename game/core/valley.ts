@@ -262,7 +262,9 @@ function placeClues(s: SiteInfo, seed: string, spec: LevelSpec, goal: Goal, pare
       const x = p.x + Math.cos(a) * r
       const z = p.z + Math.sin(a) * r
       if (!standable(s, x, z, 0.5)) continue
-      const h = kind === 'cairn' ? s.field.height(x, z) : rng()
+      // fireflies: by a stream
+      const wet = kind === 'fireflies' ? [0, 1, 2, 3, 4, 5].some((a) => s.field.water(x + Math.cos(a) * 15, z + Math.sin(a) * 15) > -Infinity) : false
+      const h = kind === 'cairn' ? s.field.height(x, z) : kind === 'fireflies' ? (wet ? 1 : 0) + rng() * 0.5 : rng()
       if (h > bestH) {
         bestH = h
         spot = { x, z }

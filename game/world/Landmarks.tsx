@@ -1,5 +1,6 @@
 'use client'
-import { useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
+import { runStore } from '@/game/state/run'
 import * as THREE from 'three/webgpu'
 import { useFrame } from '@react-three/fiber'
 import { CuboidCollider, CylinderCollider, RigidBody } from '@react-three/rapier'
@@ -60,6 +61,29 @@ export function ClueProp({ kind, at }: { kind: ClueKind; at: Anchor }) {
         </>
       ) : kind === 'firepit' ? (
         <Stones ring />
+      ) : kind === 'embers' ? (
+        <>
+          <Stones ring />
+          <NightGlow position={[0, 0.25, 0]} color="#ff5a1f" size={0.3} light={10} />
+        </>
+      ) : kind === 'lantern' ? (
+        <>
+          <mesh position={[0, 1.3, 0]} castShadow>
+            <boxGeometry args={[0.12, 2.6, 0.12]} />
+            <meshLambertMaterial color={DARK_WOOD} />
+          </mesh>
+          <mesh position={[0.35, 2.5, 0]}>
+            <boxGeometry args={[0.7, 0.08, 0.08]} />
+            <meshLambertMaterial color={DARK_WOOD} />
+          </mesh>
+          <mesh position={[0.62, 2.25, 0]}>
+            <boxGeometry args={[0.18, 0.28, 0.18]} />
+            <meshLambertMaterial color="#3a3a36" />
+          </mesh>
+          <NightGlow position={[0.62, 2.22, 0]} color="#ffcf6a" size={0.12} light={8} />
+        </>
+      ) : kind === 'fireflies' ? (
+        <Fireflies at={{ x: 0, y: 0, z: 0, rotation: 0 }} />
       ) : kind === 'blaze' ? (
         <>
           <mesh position={[0, 2, 0]} castShadow>
@@ -121,6 +145,8 @@ export function GoalProp({ kind, at }: { kind: Exclude<GoalKind, 'village'>; at:
             <meshLambertMaterial color="#c2a274" />
           </mesh>
           <CuboidCollider args={[0.75, 0.3, 2.3]} />
+          {/* a lantern at the bow */}
+          <NightGlow position={[0, 0.9, 1.9]} size={0.15} light={8} />
         </group>
       ) : kind === 'cave' ? (
         // rock mass toward the cliff (local −z), the opening and the old camp facing out
@@ -143,6 +169,8 @@ export function GoalProp({ kind, at }: { kind: Exclude<GoalKind, 'village'>; at:
             <meshLambertMaterial color="#5d6b4a" />
           </mesh>
           <CuboidCollider args={[7, 4, 3]} position={[0, 3, -8.5]} />
+          {/* the old fire is lit again: it glows under the cliff at night */}
+          <NightGlow position={[0, 0.4, -1]} color="#ff7a2a" size={0.35} light={14} />
         </>
       ) : (
         // cabin (woods) or hut (lake shore, on stilts with a jetty toward local +z)
@@ -183,6 +211,8 @@ export function GoalProp({ kind, at }: { kind: Exclude<GoalKind, 'village'>; at:
             ))
           )}
           <CuboidCollider args={[2.25, 2, 1.8]} position={[0, 2, 0]} />
+          {/* a lamp in the window at night */}
+          <NightGlow position={[1.2, (kind === 'hut' ? 0.8 : 0) + 1.6, 1.85]} size={0.18} light={8} />
         </>
       )}
     </RigidBody>
@@ -222,5 +252,99 @@ export function CampProp({ at, fire }: { at: Anchor; fire: boolean }) {
         </group>
       )}
     </group>
+  )
+}
+
+/**
+ * A light that only shows at night (runStore.night): a small unfogged glowing ball that grows with distance so it
+ * stays visible far away, plus a little real light on what is around it.
+ */
+export function NightGlow({ position, color = '#ffd27a', size = 0.25, light = 6 }: { position: [number, number, number]; color?: string; size?: number; light?: number }) {
+  const ball = useRef<THREE.Mesh>(null)
+  const lamp = useRef<THREE.PointLight>(null)
+  const mat = useMemo(() => {
+    const m = new THREE.MeshBasicMaterial({ color })
+    m.fog = false
+    m.toneMapped = false
+    return m
+  }, [color])
+  useEffect(() => () => mat.dispose(), [mat])
+  useFrame(({ camera, clock }) => {
+    const b = ball.current
+    if (!b) return
+    const on = runStore.getState().night > 0
+    b.visible = on
+    if (lamp.current) lamp.current.visible = on
+    if (!on) return
+    b.getWorldPosition(tmp)
+    const d = tmp.distanceTo(camera.position)
+    // ~constant on-screen size beyond 40 m, and a slow flicker
+    b.scale.setScalar(Math.max(1, d / 40) * (0.92 + Math.sin(clock.elapsedTime * 7 + position[0]) * 0.08))
+  })
+  return (
+    <group position={position}>
+      <mesh ref={ball} material={mat} visible={false}>
+        <sphereGeometry args={[size, 8, 6]} />
+      </mesh>
+      {light > 0 && <pointLight ref={lamp} color={color} intensity={light} distance={14} decay={2} visible={false} />}
+    </group>
+  )
+}
+const tmp = new THREE.Vector3()
+
+/** Fireflies: a few dots drifting low, at night only. */
+export function Fireflies({ at }: { at: Anchor }) {
+  const group = useRef<THREE.Group>(null)
+  const mat = useMemo(() => {
+    const m = new THREE.MeshBasicMaterial({ color: '#d8ff7a' })
+    m.toneMapped = false
+    return m
+  }, [])
+  useEffect(() => () => mat.dispose(), [mat])
+  const seeds = useMemo(() => Array.from({ length: 14 }, (_, i) => [Math.sin(i * 12.9) * 6, Math.cos(i * 7.3) * 6, i * 1.7] as const), [])
+  useFrame(({ clock }) => {
+    const g = group.current
+    if (!g) return
+    g.visible = runStore.getState().night > 0
+    if (!g.visible) return
+    const t = clock.elapsedTime
+    g.children.forEach((c, i) => {
+      const [x, z, p] = seeds[i]
+      c.position.set(x + Math.sin(t * 0.4 + p) * 1.5, 0.6 + Math.sin(t * 0.9 + p) * 0.4, z + Math.cos(t * 0.33 + p) * 1.5)
+      c.scale.setScalar(0.5 + 0.5 * Math.max(0, Math.sin(t * 2.5 + p * 3)))
+    })
+  })
+  return (
+    <group ref={group} position={[at.x, at.y, at.z]} visible={false}>
+      {seeds.map((_, i) => (
+        <mesh key={i} material={mat}>
+          <sphereGeometry args={[0.06, 5, 4]} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+/** The North Star: one bright star always due north, at night (orientation without a compass). */
+export function NorthStar() {
+  const ball = useRef<THREE.Mesh>(null)
+  const mat = useMemo(() => {
+    const m = new THREE.MeshBasicMaterial({ color: '#f4f6ff' })
+    m.fog = false
+    m.toneMapped = false
+    return m
+  }, [])
+  useEffect(() => () => mat.dispose(), [mat])
+  useFrame(({ camera }) => {
+    const b = ball.current
+    if (!b) return
+    b.visible = runStore.getState().night > 0
+    // far away, north (−z), ~40° up, following the camera so it never gets closer
+    b.position.set(camera.position.x, camera.position.y + 520, camera.position.z - 620)
+  })
+  return (
+    <mesh ref={ball} material={mat} visible={false} frustumCulled={false}>
+      <sphereGeometry args={[3.2, 8, 6]} />
+    </mesh>
   )
 }
