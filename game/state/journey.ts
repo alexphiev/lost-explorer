@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { runStore } from './run'
-import { climb, explore, newRun, type RunState } from '@/game/core/travel'
+import { checkEnd, climb, explore, newRun, TIME_SCALE, type RunState } from '@/game/core/travel'
 import { generateValley, type Point, type Valley } from '@/game/core/valley'
 import type { Best, SavedRun } from './save'
 import { levelById } from '@/game/core/levels'
@@ -15,7 +15,7 @@ export interface Result {
 }
 
 /** 1 real second in the 3D scene = 20 game seconds (3 real minutes ≈ 1 game hour). */
-export const SCENE_TIME_SCALE = 20
+export const SCENE_TIME_SCALE = TIME_SCALE
 
 interface Journey {
   /** campaign level id, null for a free valley (?seed=) */
@@ -40,13 +40,12 @@ interface Journey {
 /** The run as it would be on leaving the 3D scene now: position, time spent, cold and falls committed. */
 function settleScene(valley: Valley, run: RunState, center: Point, localX: number, localZ: number, seconds: number): RunState {
   let next = explore(valley, run, center.x + localX, center.z + localZ, (seconds * SCENE_TIME_SCALE) / 3600)
-  // cold water drained energy while exploring
-  const cold = runStore.getState().coldLoss
-  if (cold > 0) next = { ...next, energy: Math.max(0, next.energy - cold) }
-  // falls hurt while exploring
-  const injury = runStore.getState().injury
-  if (injury > 0) next = { ...next, health: Math.max(0, next.health - injury) }
-  return next
+  // effort and cold spent energy, falls and the cold of the night hurt (all accumulated by the scene)
+  const r = runStore.getState()
+  const spent = r.coldLoss + r.fatigue
+  if (spent > 0) next = { ...next, energy: Math.max(0, next.energy - spent) }
+  if (r.injury > 0) next = { ...next, health: Math.max(0, next.health - r.injury) }
+  return checkEnd(next)
 }
 
 /** For the save while on foot in 3D: the live scene progress folded into the run (the scene itself keeps going). */
@@ -99,6 +98,7 @@ export const useJourney = create<Journey>((set, get) => ({
     let next = settleScene(valley, run, sceneCenter, localX, localZ, seconds)
     runStore.getState().coldLoss = 0
     runStore.getState().injury = 0
+    runStore.getState().fatigue = 0
     if (climbed && next.status === 'playing') next = climb(valley, next).state
     // the scene stays where it is (paused behind the map) until a map walk moves you
     set({ run: next, layer: 'map' })

@@ -6,6 +6,12 @@ import { createFog, fogAt, FOG_UNSEEN, revealAround, revealViewshed } from './vi
 import { CLUES, GOALS, type ClueKind } from './goals'
 
 export const DAYS_ALLOWED = 3
+/** Game seconds per real second while on foot: 1 real minute = 2.4 game hours, 30 real minutes = 3 days. */
+export const TIME_SCALE = 144
+/** The level is lost this many game hours after it started (day 1, 08:00 → day 4, 08:00). */
+export const LIMIT_HOURS = DAYS_ALLOWED * 24
+/** Game hours since the level started. */
+export const hoursUsed = (s: { day: number; hour: number }) => (s.day - 1) * 24 + s.hour - 8
 export const DAY_START = 7 // hour the sun rises
 export const NIGHTFALL = 20 // hour walking stops
 const CHUNK_HOURS = 2
@@ -326,18 +332,24 @@ export function explore(v: Valley, s: RunState, x: number, z: number, hours: num
   const moved = Math.hypot(x - s.x, z - s.z)
   revealAround(v.map, s.fog, x, z, 60)
   const won = Math.hypot(x - v.village.x, z - v.village.z) < goalReach(v)
-  const minutes = Math.round(hours * 60)
   const spotted = spotClues(v, s, x, z)
   s = spotted.state
   const stop: Stop = won
     ? { kind: 'village', message: goalFound(v) }
-    : { kind: spotted.lines.length ? 'clue' : 'explore', message: `You explore on foot for ${minutes} min (${Math.round(moved)} m from where you stopped).${spotted.lines.length ? ' ' + spotted.lines.join(' ') : ''}` }
+    : { kind: spotted.lines.length ? 'clue' : 'explore', message: `${Math.round(moved)} m on foot.${spotted.lines.length ? ' ' + spotted.lines.join(' ') : ''}` }
+  // the clock runs on (energy is spent in the scene: effort, cold, see Scene/Player)
+  let hour = s.hour + hours
+  let day = s.day
+  while (hour >= 24) {
+    hour -= 24
+    day++
+  }
   return {
     ...s,
     x,
     z,
-    hour: s.hour + hours,
-    energy: Math.max(0, s.energy - hours * 8),
+    day,
+    hour,
     path: [...s.path, x, z],
     status: won ? 'won' : s.status,
     marks: won ? addMark(s, 'village', v.village.x, v.village.z) : s.marks,
@@ -388,4 +400,16 @@ export function rest(_v: Valley, s: RunState): { state: RunState; stop: Stop } {
   }
   const state = { ...s, day, hour: DAY_START, marks: addMark(s, 'camp', s.x, s.z, `Night camp, day ${s.day}`), energy: Math.min(100, s.energy + 60), health: Math.min(100, s.health + 30) }
   return withStop(state, { kind: 'sleep', message: `You sleep under the stars. Day ${day}, 07:00. +60 energy${s.health < 100 ? ', +30 health' : ''}.` })
+}
+
+/** Out of time (72 h) or out of health: the level is lost. */
+export function checkEnd(s: RunState): RunState {
+  if (s.status !== 'playing') return s
+  if (s.health <= 0) {
+    return { ...s, health: 0, status: 'lost', log: [...s.log, { kind: 'lost', message: 'Exhausted, frozen and hurt, you collapse. Nobody finds you in time.' }] }
+  }
+  if (hoursUsed(s) >= LIMIT_HOURS) {
+    return { ...s, status: 'lost', log: [...s.log, { kind: 'lost', message: `Day ${DAYS_ALLOWED + 1} dawns and nobody is looking for you here any more. You did not make it.` }] }
+  }
+  return s
 }
