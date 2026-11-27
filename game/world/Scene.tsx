@@ -25,7 +25,7 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
   const forceWebGL = useSettings((s) => s.forceWebGL)
   const run = useJourney((s) => s.run)
   const leaveScene = useJourney((s) => s.leaveScene)
-  const hud = useRef<PlayerHud>({ prompt: null, grip: null })
+  const hud = useRef<PlayerHud>({ prompt: null, grip: null, gripBox: null })
   const [enteredAt] = useState(() => performance.now())
   const [elapsed, setElapsed] = useState(0)
 
@@ -110,7 +110,7 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
   useEffect(() => {
     if (!new URLSearchParams(window.location.search).has('debug')) return
     const w = window as unknown as { __bearingWorld?: unknown }
-    w.__bearingWorld = { climbables, waterAt, height: (x: number, z: number) => heightAt(world.terrain, x, z) }
+    w.__bearingWorld = { climbables, waterAt, height: (x: number, z: number) => heightAt(world.terrain, x, z), player: runStore.getState().playerPosition }
     return () => {
       delete w.__bearingWorld
     }
@@ -170,8 +170,12 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
       {/* contextual prompt + grip (climbing stamina), written directly by Player */}
       <div className="pointer-events-none absolute bottom-10 left-1/2 flex w-72 -translate-x-1/2 flex-col items-center gap-2 font-mono text-sm text-white">
         <div ref={(el) => { hud.current.prompt = el }} className="rounded bg-black/45 px-3 py-1 empty:hidden" />
-        <div className="h-1.5 w-40 overflow-hidden rounded bg-black/40">
-          <div ref={(el) => { hud.current.grip = el }} className="h-full w-full origin-left opacity-0 transition-opacity" />
+        {/* grip = climbing stamina: shown only while it drains; empty → you slip */}
+        <div ref={(el) => { hud.current.gripBox = el }} className="flex items-center gap-2 opacity-0 transition-opacity">
+          <span className="text-xs">Grip</span>
+          <div className="h-1.5 w-40 overflow-hidden rounded bg-black/40">
+            <div ref={(el) => { hud.current.grip = el }} className="h-full w-full origin-left" />
+          </div>
         </div>
       </div>
     </KeyboardControls>
