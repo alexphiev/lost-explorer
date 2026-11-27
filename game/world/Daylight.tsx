@@ -32,14 +32,20 @@ export default function Daylight({ getHour }: { getHour: () => number }) {
     // clear mountain air: blue sky, visible sun disc, a few clouds
     s.turbidity.value = 2.4
     s.rayleigh.value = 1.1
-    s.mieCoefficient.value = 0.004
-    s.mieDirectionalG.value = 0.82
+    // a tight forward-scattering lobe: a small glow hugging the sun, not a wide white haze around it
+    s.mieCoefficient.value = 0.0025
+    s.mieDirectionalG.value = 0.93
     s.cloudCoverage.value = 0.38
     // the scattering model outputs very bright HDR values that AgX tone mapping washes to white:
     // scale the sky down (and a touch of saturation) so the blue survives; more saturation turned the zenith violet
     const raw = s.material.colorNode as unknown as ReturnType<typeof vec3>
     const lum = dot(raw, vec3(0.2126, 0.7152, 0.0722))
-    s.material.colorNode = mix(vec3(lum), raw, 1.08).mul(0.5)
+    const sky = mix(vec3(lum), raw, 1.08).mul(0.5)
+    // near the sun: compress the excess brightness and warm it, so the halo reads golden instead of a white blur
+    // (the disc itself stays far brighter than 1: a small crisp white core)
+    const excess = lum.mul(0.5).sub(1.2).max(0)
+    const soft = sky.div(excess.mul(0.25).add(1))
+    s.material.colorNode = mix(soft, soft.mul(vec3(1.0, 0.86, 0.62)), excess.div(excess.add(2)).mul(0.5))
     s.cloudDensity.value = 0.35
     s.cloudElevation.value = 0.6
     return s

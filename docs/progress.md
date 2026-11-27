@@ -139,3 +139,4 @@ None.
 - Stream valleys are wide V's (bank 0.25 + 0.1·e + 0.0016·e² m within 170 m); upstream of a segment its carve uses the water level alongside upstream, so steep stretches don't undercut themselves.
 - Streams are 6–9 m wide: narrower ones fall between the 3.9 m vertices of the 3D mesh and show as dashes.
 - Cold water: −0.22 energy/s swimming (+0.12 in strong current), −0.04·wade/s wading; stored in runStore.coldLoss (frame loop), applied in leaveScene.
+- Sun glare (issue #25): Mie lobe tighter (g 0.93, coef 0.0025), sky brightness near the sun compressed and warmed, bloom 0.12 / radius 0.15 on input capped at 2.
