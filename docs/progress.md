@@ -1,6 +1,6 @@
 # Progress — MVP
 
-Branches: `step-1`, `step-1.5` (merged in #2), `step-2` (current)
+Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (current)
 
 ## Definition of done
 - [x] Next.js 16 + React 19.2 + TypeScript + Tailwind, exact versions pinned
@@ -36,11 +36,20 @@ Branches: `step-1`, `step-1.5` (merged in #2), `step-2` (current)
 - [x] 3D physics: tree + rock colliders, visual triangles match the Rapier heightfield, max climbable slope, respawn if fallen
 - [x] `npm run build` + Chromium smoke (/play and /map), PR opened
 
+## Step 3 — 3D stop scene + layer switch
+- [x] core: sample a 1 km 3D tile around any world position (same height field as the map)
+- [x] core: vegetation placed per 250 m world chunk (same place → same trees), scrub bushes where the map has scrub, village houses
+- [x] core/travel: `explore` (3D moves + time spent written back to the run)
+- [x] state: layer 'map' | 'scene', enterScene / leaveScene
+- [x] /play = map + 3D: "Explore on foot" from the map; in 3D, E = climb (near a tree/rock), M = back to map; 1 real s = 20 game s
+- [x] 3D: bushes + houses with colliders; HUD (day, time, energy, hints)
+- [x] /map route folded into /play; smoke script updated; build; PR
+
 ## Current task
-None. Step 2 done, PR open. Do not start step 3 without the user.
+None. Step 3 done, PR open. MVP steps 1–3 complete.
 
 ## Next action
-User playtest of /map (is choosing where to go fun?) and of the 3D collisions; then step 3 (3D stop scene generated at the map position + switch between layers).
+User playtest of /play (map ⇄ 3D). Next focus agreed with the user: realism of the 3D scene and of the character's movement (plan in the PR / final message).
 
 ## Blockers
 None.
@@ -73,3 +82,8 @@ None.
 - Climbing a viewpoint can spot the village's smoke column even without line of sight (distance < view radius + 1 km).
 - 3D physics: 2 500 fixed cylinder colliders (trunks, rocks) created imperatively via useRapier; ecctrl slopeMaxAngle 0.7 rad (was 72°: you could walk up cliffs); respawn if the body ends 30 m under the lowest ground.
 - Map UI (/map) built by the builder agent: renderMap.ts (hillshade, contours, fog), MapView.tsx (click = bearing, Walk/Climb/Rest, HUD, end panel, Enter/C/R keys).
+- Step 3: `sampleTile(field, x, z)` cuts a 1 km 3D tile anywhere; tile centres snap to the 3.9 m vertex grid so overlapping tiles share vertices (verified: 70/70 identical trees in an overlap).
+- Placement is per 250 m world chunk with its own RNG (`name:cx:cz`), every candidate draws the same numbers whether kept or not; site height uses `worldRel` (fixed 30–290 m range) instead of per-tile normalisation.
+- Scrub bushes: jittered 3.5 m world grid where `field.scrub`, wide cylinder colliders (impassable), up to 9 000 per tile (~4–5k typical).
+- /map folded into /play (`game/ui/Game.tsx` switches layers; three/webgpu is only loaded when entering 3D). Map: X / "Explore on foot". 3D: E climb (≤2.5 m from a trunk or rock), M back; position and time (×20) written back via `explore()`.
+- Rapier world may already be freed when the scene unmounts: collider cleanup is wrapped in try/catch (was a wasm "unreachable").

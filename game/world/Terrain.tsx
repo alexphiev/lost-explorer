@@ -2,7 +2,7 @@
 import { useMemo } from 'react'
 import * as THREE from 'three/webgpu'
 import { CuboidCollider, HeightfieldCollider, RigidBody } from '@react-three/rapier'
-import { relHeight, type Terrain as TerrainData } from '@/game/core/terrain'
+import { worldRel, type Terrain as TerrainData } from '@/game/core/terrain'
 
 const DRY_GRASS = new THREE.Color('#c2b25f')
 const LUSH_GRASS = new THREE.Color('#77a24a')
@@ -43,7 +43,7 @@ function buildGeometry(t: TerrainData) {
     const normal = ab.cross(ac).normalize()
     const slope = 1 - Math.abs(normal.y)
     const y = (a.y + b.y + c.y) / 3
-    const h = relHeight(t, y)
+    const h = worldRel(y)
     const hash = Math.abs((Math.sin(a.x * 12.9898 + a.z * 78.233) * 43758.5453) % 1)
 
     // vegetation ground: dry golden → lush by moisture, moss in wet hollows,

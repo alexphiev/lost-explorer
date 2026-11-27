@@ -24,6 +24,7 @@ export type StopKind =
   | 'smoke'
   | 'village'
   | 'climb'
+  | 'explore'
   | 'rest'
   | 'sleep'
   | 'refused'
@@ -186,6 +187,28 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
   path.push(x, z)
   const status = stop?.kind === 'village' ? 'won' : s.status
   return withStop({ ...s, x, z, hour, energy, path, smelledSmoke, rolls, status }, stop!)
+}
+
+/** Time spent exploring on foot in the 3D scene: move to world (x, z). */
+export function explore(v: Valley, s: RunState, x: number, z: number, hours: number): RunState {
+  if (s.status !== 'playing') return s
+  const moved = Math.hypot(x - s.x, z - s.z)
+  revealAround(v.map, s.fog, x, z, 120)
+  const won = Math.hypot(x - v.village.x, z - v.village.z) < VILLAGE_RADIUS
+  const minutes = Math.round(hours * 60)
+  const stop: Stop = won
+    ? { kind: 'village', message: 'Rooftops, a barking dog, a road. You made it to the village!' }
+    : { kind: 'explore', message: `You explore on foot for ${minutes} min (${Math.round(moved)} m from where you stopped).` }
+  return {
+    ...s,
+    x,
+    z,
+    hour: s.hour + hours,
+    energy: Math.max(0, s.energy - hours * 8),
+    path: [...s.path, x, z],
+    status: won ? 'won' : s.status,
+    log: [...s.log, stop],
+  }
 }
 
 /** Climb a tree or a rock (1 h): the higher the ground, the farther you see. */

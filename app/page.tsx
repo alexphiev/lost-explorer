@@ -6,9 +6,6 @@ export default function Home() {
       <Link href="/play" className="rounded bg-emerald-700 px-6 py-3 text-lg hover:bg-emerald-600">
         Play
       </Link>
-      <Link href="/map" className="rounded bg-emerald-700 px-6 py-3 text-lg hover:bg-emerald-600">
-        Map
-      </Link>
     </main>
   )
 }

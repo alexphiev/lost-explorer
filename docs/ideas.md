@@ -33,3 +33,10 @@ Code hygiene
 - Rivers (traced downhill) as followable guides and obstacles, per the concept.
 - Balance: tune walk speed, energy, days after playtests; consider more stop types (old trail, hut, cairn, fog bank).
 - Move valley generation (flood fill + sampling, ~60 ms) to the worker when it grows.
+
+## Step 3 follow-ups
+- Camera ends up inside tree crowns / behind trunks: pull it in when occluded (raycast against trunks or a simple distance check to nearby instances).
+- In 3D, walking out of the 1 km tile hits an invisible wall: could re-centre the tile (generate a new one) when close to the edge.
+- 3D time scale (×20) and energy cost of exploring are guesses.
+- Climbing in 3D is instant (E): real climbing (grab, pull up) is part of the realism pass.
+- Village in 3D has no smoke, people or road yet.
