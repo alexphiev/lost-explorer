@@ -16,7 +16,7 @@ import Terrain from './Terrain'
 import Vegetation, { rockSquash, ROCK_SINK, TREE_SINK } from './Vegetation'
 import Player, { CLIMB_STRIDE, keyboardMap, type PlayerHud } from './Player'
 import Water from './Water'
-import Daylight, { DaylightFog } from './Daylight'
+import Daylight, { DaylightFog, SUN_DIR } from './Daylight'
 import PostFX from './PostFX'
 import Village from './Village'
 import Decor from './Decor'
@@ -112,7 +112,7 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
   useEffect(() => {
     if (!new URLSearchParams(window.location.search).has('debug')) return
     const w = window as unknown as { __bearingWorld?: unknown }
-    w.__bearingWorld = { climbables, waterAt, height: (x: number, z: number) => heightAt(world.terrain, x, z), player: runStore.getState().playerPosition }
+    w.__bearingWorld = { climbables, waterAt, height: (x: number, z: number) => heightAt(world.terrain, x, z), player: runStore.getState().playerPosition, sun: SUN_DIR }
     return () => {
       delete w.__bearingWorld
     }
