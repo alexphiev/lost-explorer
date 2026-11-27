@@ -89,29 +89,103 @@ export function solveLeg(hipY: number, footY: number, footZ: number, groundPitch
 }
 
 export interface LimbAngles {
-  swing: number // root joint rotation.x
-  out: number // root joint rotation.z (sideways)
+  x: number // root joint rotation (three's default Euler order XYZ)
+  y: number
+  z: number
   bend: number // middle joint (elbow / knee) rotation.x
+  // root joint axes in the parent frame (columns of its rotation matrix); the bend turns about X
+  xx: number
+  xy: number
+  xz: number
+  yx: number
+  yy: number
+  yz: number
+  zx: number
+  zy: number
+  zz: number
+}
+
+export function createLimbAngles(): LimbAngles {
+  return { x: 0, y: 0, z: 0, bend: 0, xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1 }
 }
 
 /**
- * Two-bone IK in 3D for a limb that hangs along −y from its root joint, with three's default Euler order
- * (XYZ: rotation.z spreads the limb sideways first, then rotation.x swings it). Bones `a` (upper) and `b` (lower).
- * (tx, ty, tz) = end target relative to the root joint, in the root group's parent frame.
- * `bendSign` −1 = elbow (forearm folds forward), +1 = knee (shin folds back). Out of reach → limb straight toward it.
+ * Two-bone IK in 3D for a limb hanging along −y from its root joint (upper bone `a`, lower bone `b`).
+ * (tx, ty, tz) = end target relative to the root joint, in the root group's parent frame. The middle joint
+ * (rotation.x only) points toward the pole (px, py, pz). Solves the full root rotation (x, y, z in three's
+ * default XYZ order), so any reachable target is reached exactly; out of reach → limb straight at it.
+ * `bendSign` −1 = elbow (lower bone folds toward the root's +z), +1 = knee (toward −z).
  */
-export function solveLimb(tx: number, ty: number, tz: number, a: number, b: number, bendSign: number, out: LimbAngles) {
+export function solveLimb(
+  tx: number,
+  ty: number,
+  tz: number,
+  a: number,
+  b: number,
+  bendSign: number,
+  px: number,
+  py: number,
+  pz: number,
+  out: LimbAngles,
+) {
   const len = Math.hypot(tx, ty, tz) || 1e-6
   const d = Math.min(Math.max(len, Math.abs(a - b) + 0.03), a + b - 0.002)
-  const k = d / len
-  const cosB = (d * d - a * a - b * b) / (2 * a * b)
-  const bend = bendSign * Math.acos(Math.min(Math.max(cosB, -1), 1))
-  // end point in the upper bone's frame (planar chain in its y–z plane)
-  const hy = -a - b * Math.cos(bend)
-  const hz = -b * Math.sin(bend)
-  const side = Math.asin(Math.min(Math.max((tx * k) / Math.max(-hy, 0.05), -0.95), 0.95))
-  const sw = Math.atan2(tz * k, ty * k) - Math.atan2(hz, hy * Math.cos(side))
-  out.swing = Math.atan2(Math.sin(sw), Math.cos(sw))
-  out.out = side
-  out.bend = bend
+  const ux = tx / len
+  const uy = ty / len
+  const uz = tz / len
+  // pole direction made perpendicular to the root → target line
+  const pd = px * ux + py * uy + pz * uz
+  let nx = px - pd * ux
+  let ny = py - pd * uy
+  let nz = pz - pd * uz
+  let nl = Math.hypot(nx, ny, nz)
+  if (nl < 1e-4) {
+    // pole along the line: use u × ẑ (or u × x̂)
+    if (Math.abs(uz) < 0.9) {
+      nx = uy
+      ny = -ux
+      nz = 0
+    } else {
+      nx = 0
+      ny = uz
+      nz = -uy
+    }
+    nl = Math.hypot(nx, ny, nz) || 1
+  }
+  nx /= nl
+  ny /= nl
+  nz /= nl
+  const cosA = Math.min(Math.max((a * a + d * d - b * b) / (2 * a * d), -1), 1)
+  const sinA = Math.sqrt(1 - cosA * cosA)
+  // upper bone w leans toward the pole; m ⟂ w in the bend plane, on the pole side
+  const ms = bendSign < 0 ? -1 : 1
+  const Zx = ms * (nx * cosA - ux * sinA)
+  const Zy = ms * (ny * cosA - uy * sinA)
+  const Zz = ms * (nz * cosA - uz * sinA)
+  const Yx = -(ux * cosA + nx * sinA)
+  const Yy = -(uy * cosA + ny * sinA)
+  const Yz = -(uz * cosA + nz * sinA)
+  const Xx = Yy * Zz - Yz * Zy // X = Y × Z
+  const Xy = Yz * Zx - Yx * Zz
+  const Xz = Yx * Zy - Yy * Zx
+  const cosK = Math.min(Math.max((a * a + b * b - d * d) / (2 * a * b), -1), 1)
+  out.bend = bendSign * (Math.PI - Math.acos(cosK))
+  // Euler XYZ from the rotation matrix [X Y Z] (as three's Euler.setFromRotationMatrix)
+  out.y = Math.asin(Math.min(Math.max(Zx, -1), 1))
+  if (Math.abs(Zx) < 0.9999999) {
+    out.x = Math.atan2(-Zy, Zz)
+    out.z = Math.atan2(-Yx, Xx)
+  } else {
+    out.x = Math.atan2(Yz, Yy)
+    out.z = 0
+  }
+  out.xx = Xx
+  out.xy = Xy
+  out.xz = Xz
+  out.yx = Yx
+  out.yy = Yy
+  out.yz = Yz
+  out.zx = Zx
+  out.zy = Zy
+  out.zz = Zz
 }

@@ -11,10 +11,12 @@ export interface Pose {
   lean: number // torso pitch on top of the body
   torsoYaw: number
   thigh: number[]
-  legZ: number[] // thigh rotation.z (legs spread sideways; only set by climbing IK)
+  legY: number[] // thigh rotation.y / .z and arm rotation.y: only set by the climbing IK (reset every frame)
+  legZ: number[]
   knee: number[]
   ankle: number[]
   armX: number[]
+  armY: number[]
   armZ: number[]
   fore: number[]
 }
@@ -28,10 +30,12 @@ export function createPose(): Pose {
     lean: 0,
     torsoYaw: 0,
     thigh: [0, 0],
+    legY: [0, 0],
     legZ: [0, 0],
     knee: [0, 0],
     ankle: [0, 0],
     armX: [0, 0],
+    armY: [0, 0],
     armZ: [0.06, -0.06],
     fore: [-0.2, -0.2],
   }

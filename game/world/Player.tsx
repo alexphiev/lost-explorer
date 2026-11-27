@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu'
 import { heightAt, type Terrain } from '@/game/core/terrain'
 import { createWaterSample, type WaterSample } from '@/game/core/rivers'
 import { runStore } from '@/game/state/run'
-import { bodyDropFor, footAlongCycle, HIP_Y, SHIN, solveLeg, solveLimb, slopeSpeedFactor, strideLength, THIGH, type FootTarget, type LegAngles, type LimbAngles } from './gait'
+import { bodyDropFor, footAlongCycle, HIP_Y, solveLeg, solveLimb, createLimbAngles, slopeSpeedFactor, strideLength, THIGH, type FootTarget, type LegAngles } from './gait'
 import { climbPose, createPose, mantlePose, scrambleArms, swimPose } from './poses'
 
 export type Controls = 'forward' | 'backward' | 'leftward' | 'rightward' | 'jump' | 'run'
@@ -53,6 +53,12 @@ const HAND_R = 0.05
 const HOLD_STEP = 0.3 // a planted limb this far from its ideal hold (body moved on) lets its pair reach again
 const HOLD_LEAD = 0.15 // new holds land this far ahead in the direction of travel
 const BODY_OFF_WALL = 0.4 // body origin (hips) distance from the surface while climbing
+const MANTLE_HANDS_END = 0.65 // mantle progress until which the hands stay on the edge
+// leg model (see <Leg>): knee → ankle pivot, and the boot's contact points in the ankle's frame
+const ANKLE_Y = 0.36
+const BOOT_SOLE = 0.06 // sole below the ankle pivot
+const BOOT_MID = 0.04 // mid-sole ahead of the pivot (slabs)
+const BOOT_TOE = 0.15 // toe ahead of the pivot (walls)
 
 /** Camera occluders: flat [x, z, yBottom, yTop, radius] per tree crown / rock, in tile coordinates. */
 export type Occluders = Float32Array
@@ -99,7 +105,11 @@ const QN = new THREE.Vector3() // and its outward normal
 const holds = new Float32Array(12) // world x, y, z per limb: 0 left hand, 1 right hand, 2 left foot, 3 right foot
 const homes = new Float32Array(12)
 const swingFrom = new Float32Array(12)
-const limb: LimbAngles = { swing: 0, out: 0, bend: 0 }
+const limb = createLimbAngles()
+const roots = new Float32Array(12) // shoulder / hip world positions (reach check)
+const W = new THREE.Vector3()
+const FF = new THREE.Vector3() // boot forward and sole normal on the hold (world)
+const FN = new THREE.Vector3()
 /** surface being climbed: terrain (cN is its normal) or a vertical cylinder (rock / trunk) */
 const surf = { cylinder: false, rock: false, cx: 0, cz: 0, r: 1, top: 0 }
 
@@ -163,7 +173,7 @@ function Leg({ x, thigh, shin, ankle }: { x: number; thigh: G; shin: G; ankle: G
         <Part pos={[0, -0.18, 0]} color={PANTS}>
           <capsuleGeometry args={[0.062, 0.2, 2, 6]} />
         </Part>
-        <group ref={ankle} position={[0, -0.36, 0]}>
+        <group ref={ankle} position={[0, -ANKLE_Y, 0]}>
           <Part pos={[0, -0.01, 0.04]} color={BOOT}>
             <boxGeometry args={[0.13, 0.1, 0.26]} />
           </Part>
@@ -238,6 +248,7 @@ export default function Player({
     slopeF: 1,
     grip: 1,
     mantleT: 0,
+    mantleDur: 0.75,
     mantleFromX: 0,
     mantleFromY: 0,
     mantleFromZ: 0,
@@ -556,8 +567,8 @@ export default function Player({
           prompt = 'E  look around   ·   S  climb down'
           if (ePressed) onLookAround()
         } else prompt = 'Climbing  ·  Space jump off'
-        if (!c.tree && feetNow >= c.top - 0.25 && upDown > 0) {
-          // onto the top of the rock
+        if (!c.tree && feetNow >= c.top - 1.1 && upDown > 0) {
+          // onto the top of the rock, once the hands are on its top edge (shoulders just under it)
           const inward = Math.min(c.r * 0.5, 0.6)
           startMantle(c.x + Math.cos(g.angle) * inward, c.z + Math.sin(g.angle) * inward, c.top + ROOT_TO_FEET + 0.05)
         } else if (feetNow <= c.ground + 0.05 && upDown < 0) toGround()
@@ -585,10 +596,20 @@ export default function Player({
       g.mantleToX = x
       g.mantleToY = y
       g.mantleToZ = z
+      g.mantleDur = 0.6 + 0.25 * Math.max(0, y - P.y)
+      if (g.swingPair >= 0) {
+        // a pair caught mid-reach: put it on its destination hold, not in the air
+        for (let l = 0; l < 4; l++) {
+          if ((l === 0 || l === 3 ? 0 : 1) !== g.swingPair) continue
+          for (let c = 0; c < 3; c++) holds[l * 3 + c] = homes[l * 3 + c]
+        }
+        g.lastPair = g.swingPair
+        g.swingPair = -1
+      }
     }
 
     if (g.mode === 'mantle') {
-      g.mantleT = Math.min(1, g.mantleT + dt / 0.75)
+      g.mantleT = Math.min(1, g.mantleT + dt / g.mantleDur)
       const t = g.mantleT
       // up first, then forward over the edge
       const up = Math.min(1, t * 1.7)
@@ -640,8 +661,11 @@ export default function Player({
 
     // ================= poses =================
     let kJoints = 45
-    pose.legZ[0] = 0
-    pose.legZ[1] = 0
+    for (let i = 0; i < 2; i++) {
+      pose.legZ[i] = 0
+      pose.legY[i] = 0
+      pose.armY[i] = 0
+    }
     if (g.mode !== 'climb' && g.mode !== 'mantle') g.ikBlend = 0
     const runBlend0 = g.mode === 'ground' ? clamp((e.moveSpeed - 2.3) / 1.5, 0, 1) : 0
     if (g.mode === 'ground') {
@@ -652,7 +676,14 @@ export default function Player({
       kJoints = 12 + 300 * g.ikBlend * g.ikBlend // ease in from the previous pose, then follow the IK exactly
     } else if (g.mode === 'mantle') {
       mantlePose(g.mantleT, pose)
-      g.bodyY = damp(g.bodyY, pose.bodyY, 14, dt)
+      // hands planted on the edge: the drawn body stays low enough for them (shoulders ≤ ~0.5 m above),
+      // then rises with the capsule once the knee comes up
+      let drop = 0
+      if (g.limbsReady) {
+        const handY = (holds[1] + holds[4]) / 2
+        drop = Math.min(0, handY + 0.5 - (P.y + 0.4)) * clamp((0.9 - g.mantleT) / 0.25, 0, 1)
+      }
+      g.bodyY = damp(g.bodyY, pose.bodyY + drop, 14, dt)
       kJoints = 16
     } else {
       swimPose(g.phase, crawl, time, pose)
@@ -811,11 +842,11 @@ export default function Player({
       torso.current.rotation.x = g.lean
       torso.current.rotation.y = damp(torso.current.rotation.y, pose.torsoYaw, 8, dt)
     }
-    // hands and feet on holds: climbing (all four), mantling (hands push on the edge for the first half)
+    // hands and feet on holds: climbing (all four), mantling (hands push on the edge for the first part)
     let kArm = g.mode === 'ground' ? 14 : kJoints
     let kArmZ = 8
     let kFore = 14
-    const handsIk = g.mode === 'mantle' && g.limbsReady && g.mantleT < 0.6
+    const handsIk = g.mode === 'mantle' && g.limbsReady && g.mantleT < MANTLE_HANDS_END
     if ((g.mode === 'climb' || handsIk) && body.current && torso.current) {
       climbLimbs(body.current, torso.current)
       if (handsIk) kArm = 12 + 300 * g.ikBlend * g.ikBlend
@@ -833,23 +864,36 @@ export default function Player({
           const side = l % 2 === 0 ? 1 : -1
           if (l < 2) torsoG.localToWorld(V.set(side * SHOULDER_X, SHOULDER_Y, 0))
           else bodyG.localToWorld(V.set(side * HIP_X, HIP_Y, 0))
+          roots[l * 3] = V.x
+          roots[l * 3 + 1] = V.y
+          roots[l * 3 + 2] = V.z
           V.addScaledVector(cU, l < 2 ? 0.38 : -0.42).addScaledVector(cL, side * (l < 2 ? 0.1 : 0.07))
           V.x += g.vx * lead
           V.y += g.vy * lead
           V.z += g.vz * lead
           projectSurface(terrain, V.x, V.y, V.z, true)
-          const off = l < 2 ? HAND_R : 0.02
+          const off = l < 2 ? HAND_R : 0 // hand centre off the surface; feet: the sole / toe contact point
           homes[l * 3] = Q.x + QN.x * off
           homes[l * 3 + 1] = Q.y + QN.y * off
           homes[l * 3 + 2] = Q.z + QN.z * off
         }
         let err0 = 0
         let err1 = 0
+        let over0 = false
+        let over1 = false
         for (let l = 0; l < 4; l++) {
           const o = l * 3
           const d = Math.hypot(holds[o] - homes[o], holds[o + 1] - homes[o + 1], holds[o + 2] - homes[o + 2])
-          if (l === 0 || l === 3) err0 = Math.max(err0, d)
-          else err1 = Math.max(err1, d)
+          // a supporting limb close to full stretch must move on, however near its ideal hold it still is
+          const r = Math.hypot(holds[o] - roots[o], holds[o + 1] - roots[o + 1], holds[o + 2] - roots[o + 2])
+          const over = d > 0.08 && r > 0.9 * (l < 2 ? UPPER_ARM + FOREARM : THIGH + ANKLE_Y + BOOT_SOLE)
+          if (l === 0 || l === 3) {
+            err0 = Math.max(err0, d)
+            over0 = over0 || over
+          } else {
+            err1 = Math.max(err1, d)
+            over1 = over1 || over
+          }
         }
         if (!g.limbsReady || Math.max(err0, err1) > 1.2) {
           holds.set(homes) // just started (or teleported): grab where the limbs fall
@@ -857,7 +901,9 @@ export default function Player({
           g.swingPair = -1
         } else if (g.swingPair < 0) {
           const thr = anyMove ? HOLD_STEP : HOLD_STEP + 0.12 // at rest, only fix a really awkward hold
-          const p = err0 > thr && (err0 >= err1 || g.lastPair === 1) ? 0 : err1 > thr ? 1 : -1
+          const e0 = over0 ? 99 : err0
+          const e1 = over1 ? 99 : err1
+          const p = e0 > thr && (e0 >= e1 || g.lastPair === 1) ? 0 : e1 > thr ? 1 : -1
           if (p >= 0) {
             g.swingPair = p
             g.swingS = 0
@@ -865,8 +911,10 @@ export default function Player({
           }
         }
         if (g.swingPair >= 0) {
-          // the reaching pair lifts off, arcs to its new hold (tracked as the body moves) and plants
-          g.swingS = Math.min(1, g.swingS + dt / (input.run ? 0.2 : 0.28))
+          // the reaching pair lifts off, arcs to its new hold (tracked as the body moves) and plants;
+          // it hurries when the supporting pair is running out of reach
+          const hurry = (g.swingPair === 0 ? over1 : over0) ? 2.5 : 1
+          g.swingS = Math.min(1, g.swingS + (dt * hurry) / (input.run ? 0.2 : 0.28))
           const t = g.swingS
           const e = t * t * (3 - 2 * t)
           const lift = 0.1 * Math.sin(Math.PI * t)
@@ -883,8 +931,13 @@ export default function Player({
           }
         }
       }
+      // boot orientation on the hold: slab → sole flat on the slope, toes up it; wall → foot level, toe on the face
+      const wall = surf.cylinder ? 1 : clamp((Math.PI / 2 - g.climbPitch / 0.9 - 0.9) / 0.5, 0, 1)
+      const nh = Math.hypot(cN.x, cN.z) || 1
+      FF.set(cU.x * (1 - wall) - (cN.x / nh) * wall, cU.y * (1 - wall), cU.z * (1 - wall) - (cN.z / nh) * wall).normalize()
+      FN.set(cN.x * (1 - wall), cN.y * (1 - wall) + wall, cN.z * (1 - wall)).normalize()
+      const contactZ = BOOT_MID + (BOOT_TOE - BOOT_MID) * wall
       // two-bone IK onto the holds (each target brought into its limb's parent frame)
-      const footTilt = surf.cylinder ? 0.1 : Math.min(Math.PI / 2 - g.climbPitch / 0.9, 0.7) // smear on slabs, toes in on walls
       for (let l = 0; l < 4; l++) {
         if (handsIk && l >= 2) break
         const i = l % 2
@@ -892,17 +945,31 @@ export default function Player({
         V.set(holds[l * 3], holds[l * 3 + 1], holds[l * 3 + 2])
         if (l < 2) {
           torsoG.worldToLocal(V)
-          solveLimb(V.x - side * SHOULDER_X, V.y - SHOULDER_Y, V.z, UPPER_ARM, FOREARM, -1, limb)
-          pose.armX[i] = limb.swing
-          pose.armZ[i] = limb.out
+          solveLimb(V.x - side * SHOULDER_X, V.y - SHOULDER_Y, V.z, UPPER_ARM, FOREARM, -1, side * 0.7, -0.4, -0.6, limb)
+          pose.armX[i] = limb.x
+          pose.armY[i] = limb.y
+          pose.armZ[i] = limb.z
           pose.fore[i] = limb.bend
         } else {
+          // the ankle pivot sits above and behind the contact point by the boot's offset
+          V.addScaledVector(FN, BOOT_SOLE).addScaledVector(FF, -contactZ)
+          W.copy(V).add(FF)
           bodyG.worldToLocal(V)
-          solveLimb(V.x - side * HIP_X, V.y - HIP_Y, V.z, THIGH, SHIN, 1, limb)
-          pose.thigh[i] = limb.swing
-          pose.legZ[i] = limb.out
+          bodyG.worldToLocal(W)
+          solveLimb(V.x - side * HIP_X, V.y - HIP_Y, V.z, THIGH, ANKLE_Y, 1, side * 0.3, 0, 1, limb)
+          pose.thigh[i] = limb.x
+          pose.legY[i] = limb.y
+          pose.legZ[i] = limb.z
           pose.knee[i] = limb.bend
-          pose.ankle[i] = clamp(-(limb.swing + limb.bend) - bodyG.rotation.x - footTilt, -1.2, 1)
+          // boot forward in the shin's frame → ankle angle (positive tips the toe down)
+          const fx = W.x - V.x
+          const fy = W.y - V.y
+          const fz = W.z - V.z
+          const ty = limb.yx * fx + limb.yy * fy + limb.yz * fz
+          const tz = limb.zx * fx + limb.zy * fy + limb.zz * fz
+          const cb = Math.cos(limb.bend)
+          const sb = Math.sin(limb.bend)
+          pose.ankle[i] = clamp(Math.atan2(-(ty * cb + tz * sb), -ty * sb + tz * cb), -1.2, 1.2)
         }
       }
     }
@@ -915,12 +982,14 @@ export default function Player({
       const f = fores[i].current
       if (th) {
         th.rotation.x = ease(th.rotation.x, pose.thigh[i], kJoints, dt)
+        th.rotation.y = ease(th.rotation.y, pose.legY[i], kJoints, dt)
         th.rotation.z = ease(th.rotation.z, pose.legZ[i], kJoints, dt)
       }
       if (sh) sh.rotation.x = ease(sh.rotation.x, pose.knee[i], kJoints, dt)
       if (an) an.rotation.x = ease(an.rotation.x, pose.ankle[i], kJoints, dt)
       if (a) {
         a.rotation.x = ease(a.rotation.x, pose.armX[i], kArm, dt)
+        a.rotation.y = ease(a.rotation.y, pose.armY[i], kArmZ, dt)
         a.rotation.z = ease(a.rotation.z, pose.armZ[i], kArmZ, dt)
       }
       if (f) f.rotation.x = ease(f.rotation.x, pose.fore[i], kFore, dt)
