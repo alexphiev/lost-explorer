@@ -49,3 +49,8 @@ Code hygiene
 - Climbing a tree inside its crown hides the player: crown transparency near the camera.
 - Night: torch/lantern or moonlit navigation; stars.
 - Scenario script for climbing/swimming (currently in the scratchpad) could join scripts/ once tests are allowed.
+
+## Sky / decor / surfaces follow-ups
+- Quality tier: halve decor counts / radius, cheaper surface noise (1 octave) and no bloom on weak GPUs and phones.
+- Optional CC0 model packs (e.g. Kenney Nature Kit, Quaternius) for hero props if the procedural ones feel too simple; keep total download small.
+- Decor around the player is fixed at scene entry; re-centre it if the player walks far (>200 m).

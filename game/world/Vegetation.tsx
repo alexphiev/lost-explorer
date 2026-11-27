@@ -5,6 +5,7 @@ import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { Instance, Vegetation as VegetationData } from '@/game/core/placement'
 import { windMaterial } from '@/game/render/tsl/wind'
+import { texturedLambert } from '@/game/render/tsl/surface'
 
 function painted(geo: THREE.BufferGeometry, hex: string, y = 0, x = 0, z = 0) {
   const g = geo.index ? geo.toNonIndexed() : geo
@@ -142,7 +143,7 @@ export default function Vegetation({ data }: { data: VegetationData }) {
       broadleaf: windMaterial(0.45, 6),
       grass: windMaterial(0.18, 0.6),
       flower: windMaterial(0.12, 0.45),
-      rock: new THREE.MeshLambertMaterial({ flatShading: true }),
+      rock: texturedLambert(1.8, 2), // grainy stone
       bush: windMaterial(0.1, 2),
     }),
     [],

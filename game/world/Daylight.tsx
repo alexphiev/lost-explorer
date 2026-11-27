@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three/webgpu'
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js'
+import { dot, mix, vec3 } from 'three/tsl'
 import { runStore } from '@/game/state/run'
 import { atmosphereFog } from '@/game/render/tsl/atmosphere'
 import { createSunState, sunState } from './daylight'
@@ -26,11 +27,19 @@ export default function Daylight({ getHour }: { getHour: () => number }) {
     const s = new SkyMesh()
     s.scale.setScalar(5000)
     s.frustumCulled = false
-    s.turbidity.value = 6
-    s.rayleigh.value = 2.2
-    s.mieCoefficient.value = 0.006
-    s.mieDirectionalG.value = 0.86
-    s.cloudCoverage.value = 0.45
+    // the sky is drawn at the far plane: keep the haze off it, or it turns uniformly white
+    s.material.fog = false
+    // clear mountain air: blue sky, visible sun disc, a few clouds
+    s.turbidity.value = 2.4
+    s.rayleigh.value = 1.4
+    s.mieCoefficient.value = 0.004
+    s.mieDirectionalG.value = 0.82
+    s.cloudCoverage.value = 0.38
+    // the scattering model outputs very bright HDR values that AgX tone mapping washes to white:
+    // scale the sky down and push its saturation so the blue survives (the sun disc stays bright)
+    const raw = s.material.colorNode as unknown as ReturnType<typeof vec3>
+    const lum = dot(raw, vec3(0.2126, 0.7152, 0.0722))
+    s.material.colorNode = mix(vec3(lum), raw, 1.35).mul(0.42)
     s.cloudDensity.value = 0.35
     s.cloudElevation.value = 0.6
     return s

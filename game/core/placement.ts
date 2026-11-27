@@ -41,9 +41,10 @@ function scatter(
   minScale: number,
   maxScale: number,
   clear = SPAWN_CLEAR_RADIUS,
+  maxRadius = Infinity, // only keep instances this close to the tile centre (small decor)
 ): Instance[] {
   const out: Instance[] = []
-  const half = t.size / 2 - 5
+  const half = Math.min(t.size / 2 - 5, maxRadius)
   const site: Site = { h: 0, slope: 0, moisture: 0 }
   const c0x = Math.floor((t.centerX - half) / CHUNK)
   const c1x = Math.floor((t.centerX + half) / CHUNK)
@@ -63,6 +64,7 @@ function scatter(
         const x = wx - t.centerX
         const z = wz - t.centerZ
         if (Math.abs(x) > half || Math.abs(z) > half) continue
+        if (maxRadius < Infinity && x * x + z * z > maxRadius * maxRadius) continue
         if (x * x + z * z < clear * clear) continue
         const y = heightAt(t, x, z)
         if (water(wx, wz) > y - 0.1) continue // nothing grows under water
@@ -156,4 +158,35 @@ export function placeVillage(t: Terrain, field: HeightField, seed: string, villa
     houses.push({ x, y, z, scale, rotation, tint })
   }
   return houses
+}
+
+/** Small ground decor, dense but only within DECOR_RADIUS of the player (fog hides the rest). */
+export const DECOR_RADIUS = 220
+
+export interface Decor {
+  pebbles: Instance[]
+  ferns: Instance[]
+  shrubs: Instance[]
+  mushrooms: Instance[]
+  logs: Instance[]
+  stumps: Instance[]
+  branches: Instance[]
+}
+
+export function placeDecor(t: Terrain, field: HeightField, seed: string): Decor {
+  const R = DECOR_RADIUS
+  const w = field.water
+  return {
+    // stones everywhere, more on slopes and high ground
+    pebbles: scatter(t, w, seed, 'pebbles', 4000, (s) => 0.25 + 0.5 * smooth(0.15, 0.6, s.slope) + 0.3 * smooth(0.5, 0.9, s.h), 0.08, 0.45, 1, R),
+    // ferns in damp, shaded mid ground
+    ferns: scatter(t, w, seed, 'ferns', 3500, (s) => (s.slope > 0.6 ? 0 : (0.15 + 0.85 * smooth(0.3, 0.75, s.moisture)) * (1 - smooth(0.7, 0.9, s.h))), 0.5, 1.2, 1.5, R),
+    // low bushes at forest edges and in meadows
+    shrubs: scatter(t, w, seed, 'shrubs', 900, (s) => (s.slope > 0.55 ? 0 : 0.25 + 0.5 * s.moisture), 0.5, 1.3, 3, R),
+    mushrooms: scatter(t, w, seed, 'mushrooms', 700, (s) => (s.slope > 0.4 ? 0 : 0.1 + 0.9 * smooth(0.4, 0.8, s.moisture)), 0.6, 1.4, 1.5, R),
+    // fallen trunks and stumps in the forest band
+    logs: scatter(t, w, seed, 'logs', 45, (s) => (s.slope > 0.35 ? 0 : 0.3 + 0.7 * smooth(0.2, 0.5, s.h) * s.moisture), 0.7, 1.4, 6, R),
+    stumps: scatter(t, w, seed, 'stumps', 60, (s) => (s.slope > 0.45 ? 0 : 0.2 + 0.6 * smooth(0.2, 0.5, s.h)), 0.6, 1.3, 4, R),
+    branches: scatter(t, w, seed, 'branches', 700, (s) => (s.slope > 0.5 ? 0 : 0.3 + 0.5 * s.moisture), 0.5, 1.3, 1.5, R),
+  }
 }

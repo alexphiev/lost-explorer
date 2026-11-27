@@ -8,7 +8,7 @@ import { useSettings } from '@/game/state/settings'
 import { runStore } from '@/game/state/run'
 import { SCENE_TIME_SCALE, useJourney } from '@/game/state/journey'
 import { heightAt, sampleTile } from '@/game/core/terrain'
-import { placeVegetation, placeVillage } from '@/game/core/placement'
+import { placeDecor, placeVegetation, placeVillage } from '@/game/core/placement'
 import { DAYS_ALLOWED, formatHour } from '@/game/core/travel'
 import type { Point, Valley } from '@/game/core/valley'
 import { HAZE_COOL } from '@/game/render/tsl/atmosphere'
@@ -19,6 +19,7 @@ import Water from './Water'
 import Daylight, { DaylightFog } from './Daylight'
 import PostFX from './PostFX'
 import Village from './Village'
+import Decor from './Decor'
 
 
 export default function Scene({ valley, center }: { valley: Valley; center: Point }) {
@@ -34,6 +35,7 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
     return {
       terrain,
       vegetation: placeVegetation(terrain, valley.field, valley.seed),
+      decor: placeDecor(terrain, valley.field, valley.seed),
       houses: placeVillage(terrain, valley.field, valley.seed, valley.village.x, valley.village.z),
       spawn: [0, heightAt(terrain, 0, 0) + 1.5, 0] as [number, number, number],
     }
@@ -142,6 +144,7 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
           <Physics timeStep={1 / 60}>
             <Terrain terrain={t} />
             <Vegetation data={world.vegetation} />
+            <Decor data={world.decor} />
             <Village houses={world.houses} />
             <Water field={valley.field} tile={t} />
             <Player
