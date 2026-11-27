@@ -1,6 +1,6 @@
 # Progress — MVP
 
-Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (current)
+Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4, open); `realism-movement` (current, based on step-3)
 
 ## Definition of done
 - [x] Next.js 16 + React 19.2 + TypeScript + Tailwind, exact versions pinned
@@ -45,11 +45,23 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (current)
 - [x] 3D: bushes + houses with colliders; HUD (day, time, energy, hints)
 - [x] /map route folded into /play; smoke script updated; build; PR
 
+## Realism pass 1 — character movement and reactions to the landscape
+- [x] Gait driven by distance covered (planted feet, no foot sliding, no walking on the spot against an obstacle)
+- [x] Two-bone leg IK on the real ground (terrain slope, rocks via ecctrl standPoint), pelvis drop, ankles follow the slope
+- [x] Tobler's hiking function: slower uphill / on steep descents (brake impulse against ecctrl), shorter strides uphill
+- [x] Torso leans with speed and slope (forward uphill, back downhill), roll into turns, hip/shoulder counter-twist
+- [x] Air poses (rising tuck / falling reach), landing squash scaled by impact speed, slide pose on too-steep ground
+- [x] Arms counter-swing, pump when running, go out for balance on steep ground / in the air
+- [x] Breathing deepens and speeds up after running (exertion)
+- [x] Camera: no longer inside tree crowns, rocks or ridges; FOV widens when running
+- [x] Walk 1.8 m/s, run 4.5 m/s (were 3 / 7), softer acceleration
+- [x] Fixed: the left leg was rendered twice
+
 ## Current task
-None. Step 3 done, PR open. MVP steps 1–3 complete.
+None. Realism pass 1 done, PR open.
 
 ## Next action
-User playtest of /play (map ⇄ 3D). Next focus agreed with the user: realism of the 3D scene and of the character's movement (plan in the PR / final message).
+User feel-test in a real browser; then realism pass 2 (light following the game hour, climbing animation, footstep/wind/bird sounds, ground details).
 
 ## Blockers
 None.
@@ -87,3 +99,6 @@ None.
 - Scrub bushes: jittered 3.5 m world grid where `field.scrub`, wide cylinder colliders (impassable), up to 9 000 per tile (~4–5k typical).
 - /map folded into /play (`game/ui/Game.tsx` switches layers; three/webgpu is only loaded when entering 3D). Map: X / "Explore on foot". 3D: E climb (≤2.5 m from a trunk or rock), M back; position and time (×20) written back via `explore()`.
 - Rapier world may already be freed when the scene unmounts: collider cleanup is wrapped in try/catch (was a wasm "unreachable").
+- Realism 1: gait maths in `game/world/gait.ts` (pure, no allocation): stride = (0.8 + 0.3 v)·(1 − 0.45·uphill), duty 0.62 walk → 0.35 run, foot planted during stance, cosine swing arc; IK thigh 0.43 / shin 0.42 m; pelvis drops when a foot can't be reached, which gives the natural walking bob.
+- Uphill slowdown without setState: an impulse −v·m·0.2(1/f − 1) balances ecctrl's push at f × max speed (f = Tobler factor).
+- Camera occluders = crowns/rocks as vertical cylinders in a Float32Array, segment test each frame (only those within 25 m), plus 8 terrain samples along the line of sight; pull in immediately, ease back out.
