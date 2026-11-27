@@ -78,6 +78,11 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] Map: streams and rivers inked in blue; rivers and deep streams stop a walk, shallow ones are waded (+3 min, −1 energy)
 - [x] Issue #18: climbing with hands and feet planted on the surface (IK onto holds on slope / cliff / rock / trunk, diagonal pairs reach in turn, hands push on the edge when mantling)
 
+## Falls and health (issue #19)
+- [x] Health (0–100) in the run: map bar + 3D HUD; rest +8/h, sleep +30; below 25 you can't run in 3D and walk slower (map ×0.7, 3D ×0.75); at 0 you can't walk on the map until you rest (no death)
+- [x] 3D "fallen" mode: control off ~1.5–3 s, trip pose (pitch forward → hands and knees → lie flat → push up) or crumple pose on hard landings, then stand up; message in the prompt with the damage
+- [x] Triggers (running only, > 4.3 m/s): into a trunk (bounce back), small rock (0.15–0.7 m) or stump ahead; across a log (40 % per log); downhill steeper than −0.55 for > 0.35 s; wet stones in a stream (0.5/s); landing > 2 m below where the jump/fall started (−5 − 1.5·(d−2)²)
+
 ## Current task
 None. Rivers done, PR open.
 
@@ -141,3 +146,5 @@ None.
 - Streams are 6–9 m wide: narrower ones fall between the 3.9 m vertices of the 3D mesh and show as dashes.
 - Cold water: −0.22 energy/s swimming (+0.12 in strong current), −0.04·wade/s wading; stored in runStore.coldLoss (frame loop), applied in leaveScene.
 - Climbing limbs: world-fixed holds per hand/foot, projected onto the surface (terrain via `heightAt` along the slope normal, rocks/trunks as cylinders); a diagonal pair reaches when a hold is > 0.3 m from its ideal spot, lands 0.15 m ahead; or when a supporting limb passes 90 % of its reach; 3D two-bone IK `solveLimb` (gait.ts) solves the full XYZ root rotation with a pole (elbows out, knees forward), legs to the ankle pivot (0.36 m) with the boot contact offset; body pushed to 0.4 m off the surface and pitched parallel to it.
+- Falls: trip hazards are a compact Float32Array (trunks, rocks, stumps, logs) tested by proximity in the frame loop, not contact events; damage is per-scene runStore.injury applied in leaveScene (same pattern as coldLoss). Random rolls use Math.random (gameplay, not generation).
+- Sun glare (issue #25): Mie lobe tighter (g 0.93, coef 0.0025), sky brightness near the sun compressed and warmed, bloom 0.12 / radius 0.15 on input capped at 2.

@@ -117,3 +117,55 @@ export function swimPose(phase: number, crawl: number, time: number, out: Pose) 
   out.lean = -0.2 * crawl // head up to breathe
   out.torsoYaw = 0
 }
+
+// Fall keyframes: [t, bodyY, bodyPitch, bodyRoll, lean, thighL, thighR, kneeL, kneeR, armX, fore]
+// (bodyPitch tips the whole body forward around the hips-ish root; limbs are relative to the body)
+const TRIP = [
+  [0, 0, 0.15, 0, 0.2, -0.6, 0.3, 0.6, 0.5, -0.4, -0.5], // mid-stride
+  [0.14, -0.15, 0.75, 0.05, 0.3, -0.9, 0.45, 0.8, 1.0, -1.7, -0.15], // pitching forward, arms out to catch
+  [0.3, -0.5, 1.15, 0.08, 0.15, -1.15, -1.0, 1.6, 1.55, -1.25, -0.1], // on hands and knees
+  [0.45, -0.82, 1.45, 0.1, 0.05, -0.15, 0.05, 0.35, 0.6, -1.6, -1.1], // lying flat
+  [0.62, -0.82, 1.45, 0.06, 0.05, -0.15, 0.05, 0.4, 0.6, -1.6, -1.0], // lying a moment
+  [0.8, -0.5, 1.1, 0, 0.1, -1.15, -1.0, 1.6, 1.55, -1.2, -0.1], // pushed back up onto hands and knees
+  [0.9, -0.3, 0.45, 0, 0.2, -1.3, 0.1, 1.4, 1.0, -0.4, -0.3], // one foot planted, rising
+  [1, 0, 0, 0, 0.05, 0, 0, 0.05, 0.05, 0, -0.2], // standing
+]
+const CRUMPLE = [
+  [0, 0, 0, 0, 0.1, -0.3, -0.3, 0.4, 0.4, -0.5, -0.3], // feet hit the ground
+  [0.1, -0.5, 0.35, 0, 0.4, -1.6, -1.5, 2.2, 2.2, -0.9, -0.4], // legs buckle into a deep squat
+  [0.28, -0.72, 0.6, 0.38, 0.3, -1.2, -0.6, 2.0, 1.4, -1.0, -0.2], // collapse onto the knees and a hip
+  [0.7, -0.72, 0.55, 0.32, 0.25, -1.2, -0.6, 2.0, 1.4, -0.95, -0.25], // stay down, winded
+  [0.86, -0.4, 0.3, 0.05, 0.2, -1.4, 0.2, 1.4, 1.6, -0.6, -0.3], // one knee up
+  [1, 0, 0, 0, 0.05, 0, 0, 0.05, 0.05, 0, -0.2], // standing
+]
+
+const mix = (a: number[], b: number[], w: number, k: number) => a[k] + (b[k] - a[k]) * w
+
+/** A fall: `kind` 0 = trip forward (hands and knees, lie flat, get up), 1 = crumple on a hard landing. t 0 → 1. */
+export function fallPose(t: number, kind: number, out: Pose) {
+  const keys = kind === 0 ? TRIP : CRUMPLE
+  let i = 0
+  while (i < keys.length - 2 && t > keys[i + 1][0]) i++
+  const a = keys[i]
+  const b = keys[i + 1]
+  const u = Math.min(1, Math.max(0, (t - a[0]) / (b[0] - a[0] || 1)))
+  const w = u * u * (3 - 2 * u)
+  out.bodyY = mix(a, b, w, 1)
+  out.bodyPitch = mix(a, b, w, 2)
+  out.bodyRoll = mix(a, b, w, 3)
+  out.bodyYaw = 0
+  out.lean = mix(a, b, w, 4)
+  out.torsoYaw = 0
+  out.thigh[0] = mix(a, b, w, 5)
+  out.thigh[1] = mix(a, b, w, 6)
+  out.knee[0] = mix(a, b, w, 7)
+  out.knee[1] = mix(a, b, w, 8)
+  out.ankle[0] = 0.1
+  out.ankle[1] = 0.1
+  out.armX[0] = mix(a, b, w, 9)
+  out.armX[1] = mix(a, b, w, 9) + 0.05
+  out.armZ[0] = 0.25
+  out.armZ[1] = -0.25
+  out.fore[0] = mix(a, b, w, 10)
+  out.fore[1] = mix(a, b, w, 10)
+}

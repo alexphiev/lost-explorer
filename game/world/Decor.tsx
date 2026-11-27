@@ -18,8 +18,8 @@ function painted(geo: THREE.BufferGeometry, hex: string, y = 0, x = 0, z = 0) {
   return g
 }
 
-const LOG_R = 0.3
-const LOG_HALF = 2
+export const LOG_R = 0.3
+export const LOG_HALF = 2
 const STUMP_H = 0.5
 
 /** vertex colour gradient base -> tip along Y (0..h) */
