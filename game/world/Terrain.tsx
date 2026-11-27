@@ -95,7 +95,7 @@ function buildGeometry(t: TerrainData, ix0: number, iz0: number, count: number, 
     const edge = (x0: number, z0: number, x1: number, z1: number) => {
       const m = t.moisture[z0 * n + x0]
       vx(x0, z0, a); vx(x1, z1, b); vx(x1, z1, c); c.y -= SKIRT; pushTri(m)
-      vx(x0, z0, a); vx(x1, z1, c); c.y -= SKIRT; vx(x1, z1, b); pushTri(m)
+      vx(x0, z0, a); vx(x1, z1, b); b.y -= SKIRT; vx(x1, z1, c); pushTri(m) // same strip, the other face
       vx(x0, z0, a); vx(x1, z1, b); b.y -= SKIRT; vx(x0, z0, c); c.y -= SKIRT; pushTri(m)
       vx(x0, z0, a); vx(x0, z0, b); b.y -= SKIRT; vx(x1, z1, c); c.y -= SKIRT; pushTri(m)
     }

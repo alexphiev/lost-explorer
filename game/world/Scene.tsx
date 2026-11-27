@@ -124,7 +124,10 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
     const vegetation = placeVegetation(terrain, valley.field, valley.seed)
     // appear where you stood on the map, or the nearest flat, safe ground
     const run = useJourney.getState().run
-    const at = safeSpawn(terrain, valley.field, vegetation, (run?.x ?? center.x) - center.x, (run?.z ?? center.z) - center.z)
+    const lx = (run?.x ?? center.x) - center.x
+    const lz = (run?.z ?? center.z) - center.z
+    // a resumed run puts you back exactly where you were; a new one on the nearest safe ground
+    const at = useJourney.getState().freshSpawn ? safeSpawn(terrain, valley.field, vegetation, lx, lz) : { x: lx, z: lz }
     return {
       terrain,
       vegetation,

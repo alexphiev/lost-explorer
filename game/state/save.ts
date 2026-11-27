@@ -6,7 +6,8 @@ import type { Point } from '@/game/core/valley'
  * localStorage rather than a cookie: the fog of war alone is ~22 KB, cookies cap at 4 KB.
  */
 const PROGRESS_KEY = 'bearing:progress:v1'
-const runKey = (seed: string) => `bearing:run:v1:${seed}`
+// v2: the 3 km on-foot world (redesign); v1 runs were on the old 12 km map and are not resumed
+const runKey = (seed: string) => `bearing:run:v2:${seed}`
 
 export interface Best {
   /** real play time */

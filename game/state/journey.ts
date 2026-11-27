@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { runStore } from './run'
-import { campRest, checkEnd, climb, explore, makeCamp, newRun, observe, TIME_SCALE, type RunState } from '@/game/core/travel'
+import { campRest, checkEnd, climb, explore, hoursUsed, LIMIT_HOURS, makeCamp, newRun, observe, TIME_SCALE, type RunState } from '@/game/core/travel'
 import { generateValley, type Point, type Valley } from '@/game/core/valley'
 import type { Best, SavedRun } from './save'
 import { levelById } from '@/game/core/levels'
@@ -28,6 +28,10 @@ interface Journey {
   /** world position the 3D tile is centred on; kept while the scene waits behind the map */
   sceneCenter: Point | null
   result: Result | null
+  /** a new id for every started or resumed run: the 3D scene is rebuilt (player back at the start) */
+  runId: number
+  /** new run: appear on the nearest safe ground; resumed run: exactly where you were */
+  freshSpawn: boolean
   start: (seed: string, level?: number | null) => void
   resume: (saved: SavedRun) => void
   setBearing: (b: number) => void
@@ -45,7 +49,11 @@ interface Journey {
 
 /** The run as it would be on leaving the 3D scene now: position, time spent, cold and falls committed. */
 function settleScene(valley: Valley, run: RunState, center: Point, localX: number, localZ: number, seconds: number): RunState {
-  let next = explore(valley, run, center.x + localX, center.z + localZ, (seconds * SCENE_TIME_SCALE) / 3600)
+  const hours = (seconds * SCENE_TIME_SCALE) / 3600
+  const r0 = runStore.getState()
+  // out of health or out of time first: arriving then is too late
+  const canWin = run.health - r0.injury > 0 && hoursUsed(run) + hours < LIMIT_HOURS
+  let next = explore(valley, run, center.x + localX, center.z + localZ, hours, canWin)
   // effort and cold spent energy, falls and the cold of the night hurt (all accumulated by the scene)
   const r = runStore.getState()
   const spent = r.coldLoss + r.fatigue
@@ -76,16 +84,18 @@ export const useJourney = create<Journey>((set, get) => ({
   layer: 'map',
   sceneCenter: null,
   result: null,
+  runId: 0,
+  freshSpawn: true,
   start: (seed, level = get().level) => {
     const valley = get().valley?.seed === seed ? get().valley! : generateValley(seed, level !== null ? levelById(level)?.spec : undefined)
     useClock.setState({ seconds: 0 })
     // the level is played on foot: straight into the 3D valley
-    set({ level, valley, run: newRun(valley), bearing: null, layer: 'scene', sceneCenter: WORLD_CENTER, result: null })
+    set({ level, valley, run: newRun(valley), bearing: null, layer: 'scene', sceneCenter: WORLD_CENTER, result: null, runId: get().runId + 1, freshSpawn: true })
   },
   resume: (saved) => {
     const valley = get().valley?.seed === saved.seed ? get().valley! : generateValley(saved.seed, saved.level !== null ? levelById(saved.level)?.spec : undefined)
     useClock.setState({ seconds: saved.seconds })
-    set({ level: saved.level, valley, run: saved.run, bearing: saved.bearing, layer: 'scene', sceneCenter: WORLD_CENTER, result: null })
+    set({ level: saved.level, valley, run: saved.run, bearing: saved.bearing, layer: 'scene', sceneCenter: WORLD_CENTER, result: null, runId: get().runId + 1, freshSpawn: false })
   },
   setBearing: (bearing) => set({ bearing }),
   climb: () => {
@@ -106,6 +116,8 @@ export const useJourney = create<Journey>((set, get) => ({
     runStore.getState().coldLoss = 0
     runStore.getState().injury = 0
     runStore.getState().fatigue = 0
+    // a new visit starts now: the autosave triggered by `set` must not count the last one twice
+    runStore.getState().sceneEnteredAt = performance.now()
     const next = settled.status === 'playing' ? campRest(settled, sleep) : settled
     set({ run: next, layer: next.status === 'playing' ? 'scene' : 'map' })
   },

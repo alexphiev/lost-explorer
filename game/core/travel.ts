@@ -369,11 +369,11 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
 }
 
 /** Time spent exploring on foot in the 3D scene: move to world (x, z). */
-export function explore(v: Valley, s: RunState, x: number, z: number, hours: number): RunState {
+export function explore(v: Valley, s: RunState, x: number, z: number, hours: number, canWin = true): RunState {
   if (s.status !== 'playing') return s
   const moved = Math.hypot(x - s.x, z - s.z)
   revealAround(v.map, s.fog, x, z, 60)
-  const won = Math.hypot(x - v.village.x, z - v.village.z) < goalReach(v)
+  const won = canWin && Math.hypot(x - v.village.x, z - v.village.z) < goalReach(v)
   const spotted = spotClues(v, s, x, z)
   s = spotted.state
   const stop: Stop = won
