@@ -90,9 +90,9 @@ function fill(
   mesh.computeBoundingSphere()
 }
 
-const rockSquash = (it: Instance) => 0.45 + it.tint * 0.4
-const ROCK_SINK = 0.25
-const TREE_SINK = 0.2
+export const rockSquash = (it: Instance) => 0.45 + it.tint * 0.4
+export const ROCK_SINK = 0.25
+export const TREE_SINK = 0.2
 
 /** Fixed colliders: trunks (conifers a bit wider: low branches) and rocks. Created imperatively (2 500 colliders). */
 function VegetationColliders({ data }: { data: VegetationData }) {

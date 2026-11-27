@@ -53,7 +53,7 @@ function reachable(field: HeightField, map: Terrain, start: Point): Uint8Array {
         const j = jz * n + jx
         if (seen[j]) continue
         const grade = (map.heights[j] - map.heights[i]) / (cell * Math.hypot(dx, dz))
-        if (grade > MAX_UPHILL || grade < -MAX_DOWNHILL || field.scrub(toX(jx), toX(jz))) continue
+        if (grade > MAX_UPHILL || grade < -MAX_DOWNHILL || field.scrub(toX(jx), toX(jz)) || field.water(toX(jx), toX(jz)) > map.heights[j]) continue
         seen[j] = 1
         queue[tail++] = j
       }
@@ -78,7 +78,7 @@ export function generateValley(seed: string): Valley {
     for (let r = 4500; r <= 5500; r += 100) {
       const x = Math.sin((a * Math.PI) / 180) * r
       const z = -Math.cos((a * Math.PI) / 180) * r
-      if (slopeAt(map, x, z) > 0.25 || isScrub(field, x, z)) continue
+      if (slopeAt(map, x, z) > 0.25 || isScrub(field, x, z) || field.water(x, z) > -Infinity) continue
       const ix = Math.round((x + map.size / 2) / cell)
       const iz = Math.round((z + map.size / 2) / cell)
       if (!ok[iz * n + ix]) continue

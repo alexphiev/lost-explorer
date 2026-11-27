@@ -1,6 +1,6 @@
 # Progress — MVP
 
-Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged; `realism-1` (current, PR #5). `realism-movement` is obsolete (pre-squash base), can be deleted
+Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged; `realism-1` (#5) merged; `realism-2` (current). `realism-movement` is obsolete (pre-squash base), can be deleted
 
 ## Definition of done
 - [x] Next.js 16 + React 19.2 + TypeScript + Tailwind, exact versions pinned
@@ -57,11 +57,21 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] Walk 1.8 m/s, run 4.5 m/s (were 3 / 7), softer acceleration
 - [x] Fixed: the left leg was rendered twice
 
+## Realism pass 2 — climbing, swimming, water, daylight
+- [x] Climbing terrain by steepness: walk into a >40° slope → climb; slab (40–65°, leaning on the slope, all fours) → wall (>65°, upright, arms overhead); mantle over the top; Space lets go
+- [x] Climbing boulders (new 2.6–4.6 m boulders) around their sides and mantling onto the top
+- [x] Climbing trees (E): hug the trunk through the branches (collisions off while climbing), perch with the head out of the crown; E there = look around (map reveal)
+- [x] Grip stamina (bar under the prompt): drains with steepness and Shift, slip when empty, refills on the ground
+- [x] Lakes in the world (core): 9–19 per valley, flat water, carved beds, shores; they stop map walks; no trees/scrub/village in water
+- [x] Swimming: tread water when still, front crawl when moving (camera-relative), wade with high knees and drag in shallow water
+- [x] Water rendering (TSL fresnel + ripples) and lakes on the map (builder)
+- [x] Light follows the game hour: sun/moon path, colours, sky, fog tint, night (builder)
+
 ## Current task
-None. Realism pass 1 done, PR #5 open.
+None. Realism pass 2 done, PR open.
 
 ## Next action
-User feel-test in a real browser; then realism pass 2 (light following the game hour, climbing animation, footstep/wind/bird sounds, ground details).
+User feel-test (climb a cliff, a boulder, a tree; swim; night). Then: sounds (steps by ground, water, wind, birds), splash/ripple effects, rivers.
 
 ## Blockers
 None.
@@ -102,3 +112,8 @@ None.
 - Realism 1: gait maths in `game/world/gait.ts` (pure, no allocation): stride = (0.8 + 0.3 v)·(1 − 0.45·uphill), duty 0.62 walk → 0.35 run, foot planted during stance, cosine swing arc; IK thigh 0.43 / shin 0.42 m; pelvis drops when a foot can't be reached, which gives the natural walking bob.
 - Uphill slowdown without setState: an impulse −v·m·0.2(1/f − 1) balances ecctrl's push at f × max speed (f = Tobler factor).
 - Camera occluders = crowns/rocks as vertical cylinders in a Float32Array, segment test each frame (only those within 25 m), plus 8 terrain samples along the line of sight; pull in immediately, ease back out.
+- Realism 2: Player is a mode machine (ground / climb / mantle / swim). In non-ground modes ecctrl is disabled (React state toggled on mode changes only) and the body is driven by velocity toward a target with gain min(10, 0.8/dt): a plain ×10 gain diverged when a slow frame ran several physics steps.
+- Climbing trees turns the player collider's collision groups off (0x00010000), not a sensor: a sensor-only body loses its mass in Rapier.
+- Terrain climb starts when walking into ground rising > 0.84 (40°) within 0.7 m, even if ecctrl says "not grounded" (it does not count slopes above slopeMaxAngle as ground).
+- Lakes: one chance per 1.2 km chunk, level = lowest rim point − 0.6 m, accepted when rim height spread < 30 m; shore rises 35 % over 80 m so it always meets the terrain.
+- `?debug=1` exposes `window.__bearingTeleport(x, z, yaw)` and `window.__bearingWorld` (climbables, water, height) and shows the mode in the prompt; used by scenario scripts.

@@ -40,3 +40,12 @@ Code hygiene
 - 3D time scale (×20) and energy cost of exploring are guesses.
 - Climbing in 3D is instant (E): real climbing (grab, pull up) is part of the realism pass.
 - Village in 3D has no smoke, people or road yet.
+
+## Realism pass 2 follow-ups
+- Sounds: footsteps by ground (grass, rock, water), breathing, wind, birds, water lapping.
+- Splashes and ripples when entering water / swimming; wet clothes tint.
+- Rivers traced downhill (followable guides + fords), per the concept.
+- Ledge hang/shimmy on rock edges, jump-to-grab, climbing down facing out on slabs.
+- Climbing a tree inside its crown hides the player: crown transparency near the camera.
+- Night: torch/lantern or moonlit navigation; stars.
+- Scenario script for climbing/swimming (currently in the scratchpad) could join scripts/ once tests are allowed.

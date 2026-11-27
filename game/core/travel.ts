@@ -19,6 +19,7 @@ export type StopKind =
   | 'cliff'
   | 'drop'
   | 'scrub'
+  | 'lake'
   | 'edge'
   | 'berries'
   | 'smoke'
@@ -127,6 +128,10 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
     }
     if (grade < -MAX_DOWNHILL) {
       stop = { kind: 'drop', message: `The ground drops away sharply to the ${dir}. Too dangerous.` }
+      break
+    }
+    if (h1 < v.field.water(nx, nz) - 0.3) {
+      stop = { kind: 'lake', message: `A lake blocks the way ${dir}. Go around, or explore on foot and swim across.` }
       break
     }
     if (isScrub(v.field, nx, nz)) {

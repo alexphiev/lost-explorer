@@ -1,6 +1,6 @@
 'use client'
-import { Suspense, useEffect, useMemo, useState } from 'react'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Canvas } from '@react-three/fiber'
 import { KeyboardControls } from '@react-three/drei'
 import { Physics } from '@react-three/rapier'
 import { createRenderer } from '@/game/render/renderer'
@@ -8,42 +8,24 @@ import { useSettings } from '@/game/state/settings'
 import { runStore } from '@/game/state/run'
 import { SCENE_TIME_SCALE, useJourney } from '@/game/state/journey'
 import { heightAt, sampleTile } from '@/game/core/terrain'
-import { placeVegetation, placeVillage, type Instance, type Vegetation as VegetationData } from '@/game/core/placement'
+import { placeVegetation, placeVillage } from '@/game/core/placement'
 import { DAYS_ALLOWED, formatHour } from '@/game/core/travel'
 import type { Point, Valley } from '@/game/core/valley'
-import { atmosphereFog, HAZE_COOL } from '@/game/render/tsl/atmosphere'
+import { HAZE_COOL } from '@/game/render/tsl/atmosphere'
 import Terrain from './Terrain'
-import Vegetation from './Vegetation'
-import Player, { keyboardMap } from './Player'
-import SunLight, { SUN_DIRECTION } from './SunLight'
+import Vegetation, { rockSquash, ROCK_SINK, TREE_SINK } from './Vegetation'
+import Player, { CLIMB_STRIDE, keyboardMap, type PlayerHud } from './Player'
+import Water from './Water'
+import Daylight, { DaylightFog } from './Daylight'
 import PostFX from './PostFX'
-import Sky from './Sky'
 import Village from './Village'
 
-function Atmosphere({ mistHeight }: { mistHeight: number }) {
-  const scene = useThree((s) => s.scene)
-  useEffect(() => {
-    scene.fogNode = atmosphereFog(SUN_DIRECTION, mistHeight)
-    return () => {
-      scene.fogNode = null
-    }
-  }, [scene, mistHeight])
-  return null
-}
-
-const CLIMB_REACH = 2.5 // metres from a trunk or rock edge
-
-function nearClimbable(v: VegetationData, x: number, z: number) {
-  const near = (list: Instance[], radius: number) =>
-    list.some((it) => Math.hypot(it.x - x, it.z - z) < radius * it.scale + CLIMB_REACH)
-  return near(v.conifers, 0.7) || near(v.broadleaves, 0.35) || near(v.rocks, 0.8)
-}
 
 export default function Scene({ valley, center }: { valley: Valley; center: Point }) {
   const forceWebGL = useSettings((s) => s.forceWebGL)
   const run = useJourney((s) => s.run)
   const leaveScene = useJourney((s) => s.leaveScene)
-  const [hint, setHint] = useState<string | null>(null)
+  const hud = useRef<PlayerHud>({ prompt: null, grip: null })
   const [enteredAt] = useState(() => performance.now())
   const [elapsed, setElapsed] = useState(0)
 
@@ -52,7 +34,7 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
     return {
       terrain,
       vegetation: placeVegetation(terrain, valley.field, valley.seed),
-      houses: placeVillage(terrain, valley.seed, valley.village.x, valley.village.z),
+      houses: placeVillage(terrain, valley.field, valley.seed, valley.village.x, valley.village.z),
       spawn: [0, heightAt(terrain, 0, 0) + 1.5, 0] as [number, number, number],
     }
   }, [valley, center])
@@ -81,22 +63,66 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
     return () => clearInterval(id)
   }, [enteredAt])
 
-  // E = climb (near a tree or a rock), M = back to the map. Letters by key, not code, so AZERTY works.
+  // M = back to the map (letter by key, not code, so AZERTY works). E (climb / look around) lives in Player.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const key = e.key.toLowerCase()
-      if (key !== 'e' && key !== 'm') return
+      if (e.key.toLowerCase() !== 'm') return
       const p = runStore.getState().playerPosition
-      const seconds = (performance.now() - enteredAt) / 1000
-      if (key === 'm') return leaveScene(p.x, p.z, seconds, false)
-      if (nearClimbable(world.vegetation, p.x, p.z)) return leaveScene(p.x, p.z, seconds, true)
-      setHint('Nothing to climb here: walk up to a tree or a rock.')
-      setTimeout(() => setHint(null), 2500)
+      leaveScene(p.x, p.z, (performance.now() - enteredAt) / 1000, false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [world, enteredAt, leaveScene])
+  }, [enteredAt, leaveScene])
 
+  // looking around from a tree top or a rock = the map's "climb" reveal from this spot
+  const onLookAround = useCallback(() => {
+    const p = runStore.getState().playerPosition
+    leaveScene(p.x, p.z, (performance.now() - enteredAt) / 1000, true)
+  }, [enteredAt, leaveScene])
+
+  const waterAt = useCallback(
+    (x: number, z: number) => valley.field.water(x + world.terrain.centerX, z + world.terrain.centerZ),
+    [valley, world],
+  )
+
+  // climbables: [x, z, yGround, yTop, climbRadius, type] — rocks (top = collider top) and trees (perch height)
+  const climbables = useMemo(() => {
+    const v = world.vegetation
+    const out = new Float32Array((v.rocks.length + v.conifers.length + v.broadleaves.length) * CLIMB_STRIDE)
+    let o = 0
+    const add = (x: number, z: number, y0: number, y1: number, r: number, type: number) => {
+      out[o++] = x
+      out[o++] = z
+      out[o++] = y0
+      out[o++] = y1
+      out[o++] = r
+      out[o++] = type
+    }
+    // rocks: climbing radius = collider radius + capsule radius + a little air
+    for (const it of v.rocks) add(it.x, it.z, it.y, it.y - ROCK_SINK * it.scale + it.scale * rockSquash(it) * 0.85, it.scale * 0.8 + 0.35, 0)
+    // trees: hug the trunk (collisions are off while climbing a tree); perch just under the top so the head pokes out
+    for (const it of v.conifers) add(it.x, it.z, it.y, it.y + (7.4 - TREE_SINK) * it.scale - 1.3, it.scale * 0.2 + 0.28, 1)
+    for (const it of v.broadleaves) add(it.x, it.z, it.y, it.y + (5.6 - TREE_SINK) * it.scale - 1.4, it.scale * 0.25 + 0.28, 1)
+    return out
+  }, [world])
+
+  // ?debug=1: expose the tile to scripts (find a tree, a rock, a cliff, a lake)
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has('debug')) return
+    const w = window as unknown as { __bearingWorld?: unknown }
+    w.__bearingWorld = { climbables, waterAt, height: (x: number, z: number) => heightAt(world.terrain, x, z) }
+    return () => {
+      delete w.__bearingWorld
+    }
+  }, [climbables, waterAt, world])
+
+
+  // continuous game hour for the light (read every frame, no re-render)
+  const startHour = run?.hour ?? 12
+  const getHour = useCallback(
+    () => (startHour + ((performance.now() - enteredAt) / 1000) * SCENE_TIME_SCALE / 3600) % 24,
+    [startHour, enteredAt],
+  )
   const hour = run ? run.hour + (elapsed * SCENE_TIME_SCALE) / 3600 : 0
   const t = world.terrain
 
@@ -110,16 +136,23 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
         camera={{ fov: 55, near: 0.1, far: 900 }}
       >
         <color attach="background" args={[HAZE_COOL]} />
-        <Atmosphere mistHeight={t.minHeight + (t.maxHeight - t.minHeight) * 0.15} />
-        <hemisphereLight args={['#b4cbe3', '#7a6545', 1.7]} />
-        <SunLight />
-        <Sky />
+        <DaylightFog mistHeight={t.minHeight + (t.maxHeight - t.minHeight) * 0.15} />
+        <Daylight getHour={getHour} />
         <Suspense fallback={null}>
           <Physics timeStep={1 / 60}>
             <Terrain terrain={t} />
             <Vegetation data={world.vegetation} />
             <Village houses={world.houses} />
-            <Player spawn={world.spawn} terrain={t} occluders={occluders} />
+            <Water field={valley.field} tile={t} />
+            <Player
+              spawn={world.spawn}
+              terrain={t}
+              occluders={occluders}
+              climbables={climbables}
+              waterAt={waterAt}
+              hud={hud}
+              onLookAround={onLookAround}
+            />
           </Physics>
         </Suspense>
         <PostFX />
@@ -132,8 +165,14 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
           </div>
         )}
         <div className="text-xs text-white/70">ZQSD/WASD/arrows · Shift run · Space jump · drag to look</div>
-        <div className="text-xs text-white/90">E climb (next to a tree or rock) · M back to the map</div>
-        {hint && <div className="mt-1 text-amber-200">{hint}</div>}
+        <div className="text-xs text-white/90">Walk into a steep slope or a rock to climb · E climb a tree · M back to the map</div>
+      </div>
+      {/* contextual prompt + grip (climbing stamina), written directly by Player */}
+      <div className="pointer-events-none absolute bottom-10 left-1/2 flex w-72 -translate-x-1/2 flex-col items-center gap-2 font-mono text-sm text-white">
+        <div ref={(el) => { hud.current.prompt = el }} className="rounded bg-black/45 px-3 py-1 empty:hidden" />
+        <div className="h-1.5 w-40 overflow-hidden rounded bg-black/40">
+          <div ref={(el) => { hud.current.grip = el }} className="h-full w-full origin-left opacity-0 transition-opacity" />
+        </div>
       </div>
     </KeyboardControls>
   )

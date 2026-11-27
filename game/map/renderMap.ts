@@ -10,6 +10,9 @@ const HIGH = hex(0xb9ad8c)
 const PEAK = hex(0xd8d0bc)
 const SCRUB = hex(0x556b3a)
 const PARCHMENT = hex(0xe9dfc6)
+const WATER = hex(0x6d9bb0)
+const SHORE = hex(0x8fb7c4)
+const WATER_LINE = hex(0x4f7d92)
 
 const mix = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
@@ -48,7 +51,23 @@ export function renderMap(valley: Valley, fog: Uint8Array, out: ImageData) {
       const hh = h[i]
       const x = -t.size / 2 + ix * cell
       const z = -t.size / 2 + iz * cell
-      let c = baseColor((hh - t.minHeight) / range, t.moisture[i], isScrub(valley.field, x, z))
+      const isWater = valley.field.water(x, z) > hh
+      let c: RGB
+      if (isWater) {
+        const dry = (ox: number, oz: number) => valley.field.water(x + ox * cell, z + oz * cell) <= h[Math.min(Math.max(iz + oz, 0), n - 1) * n + Math.min(Math.max(ix + ox, 0), n - 1)]
+        const shore = dry(1, 0) || dry(-1, 0) || dry(0, 1) || dry(0, -1)
+        c = shore ? SHORE : iz % 6 === 0 && (ix + iz * 7) % 11 < 8 ? WATER_LINE : WATER
+        if (f === FOG_FAR) {
+          const gray = (c[0] + c[1] + c[2]) / 3
+          c = mix(mix(c, [gray, gray, gray], 0.3), PARCHMENT, 0.55)
+        }
+        data[p] = c[0]
+        data[p + 1] = c[1]
+        data[p + 2] = c[2]
+        data[p + 3] = 255
+        continue
+      }
+      c = baseColor((hh - t.minHeight) / range, t.moisture[i], isScrub(valley.field, x, z))
       // hillshade from the north-west
       const hl = h[iz * n + Math.max(ix - 1, 0)]
       const hr = h[iz * n + Math.min(ix + 1, n - 1)]

@@ -1,3 +1,4 @@
+// Superseded by Daylight.tsx (not used by Scene any more).
 'use client'
 import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
