@@ -10,7 +10,7 @@ import { renderMap } from './renderMap'
 const btn = 'rounded bg-amber-900 px-4 py-2 text-amber-50 hover:bg-amber-800 disabled:opacity-40 disabled:hover:bg-amber-900'
 
 export default function MapView() {
-  const { valley, run, bearing, start, setBearing, walk, climb, rest } = useJourney()
+  const { valley, run, bearing, start, setBearing, walk, climb, rest, enterScene } = useJourney()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const offRef = useRef<HTMLCanvasElement | null>(null)
   const [size, setSize] = useState(600)
@@ -138,10 +138,11 @@ export default function MapView() {
       if (k === 'enter' || k === 'w') walk()
       else if (k === 'c') climb()
       else if (k === 'r') rest()
+      else if (k === 'x') enterScene()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [walk, climb, rest])
+  }, [walk, climb, rest, enterScene])
 
   if (!valley || !run) return null
   const playing = run.status === 'playing'
@@ -169,8 +170,9 @@ export default function MapView() {
           <button className={btn} disabled={!playing || bearing === null} onClick={walk}>Walk 2h</button>
           <button className={btn} disabled={!playing} onClick={climb}>Climb (1 h)</button>
           <button className={btn} disabled={!playing} onClick={rest}>{sleeping ? 'Sleep' : 'Rest'}</button>
+          <button className={btn} disabled={!playing} onClick={enterScene}>Explore on foot (3D)</button>
         </div>
-        <p className="text-xs opacity-70">Click the map to choose a bearing. Enter/W walk, C climb, R rest.</p>
+        <p className="text-xs opacity-70">Click the map to choose a bearing. Enter/W walk, C climb, R rest, X explore on foot (find a way around an obstacle, climb a tree to look around).</p>
         <ul className="space-y-1 text-sm">
           {recent.map((s, i) => (
             <li key={run.log.length - i} className={i === 0 ? 'font-bold' : 'opacity-70'}>{s.message}</li>

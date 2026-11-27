@@ -50,7 +50,13 @@ function makeGeometries() {
     painted(new THREE.IcosahedronGeometry(0.08, 0), '#ffffff', 0.42),
   ])
   const rock = new THREE.DodecahedronGeometry(1, 0)
-  return { conifer, broadleafTrunk, broadleaf, grass, flower, rock }
+  // thorny scrub: a tangle of dark blobs, ~2 m tall
+  const bush = mergeGeometries([
+    painted(new THREE.IcosahedronGeometry(1.1, 0), '#4b5e2e', 0.9),
+    painted(new THREE.IcosahedronGeometry(0.9, 0), '#566a33', 1.3, 0.8, 0.3),
+    painted(new THREE.IcosahedronGeometry(0.8, 0), '#43552a', 0.8, -0.7, -0.5),
+  ])
+  return { conifer, broadleafTrunk, broadleaf, grass, flower, rock, bush }
 }
 
 const tmpM = new THREE.Matrix4()
@@ -109,7 +115,18 @@ function VegetationColliders({ data }: { data: VegetationData }) {
         body,
       )
     }
-    return () => world.removeRigidBody(body)
+    // scrub is impassable: overlapping wide cylinders
+    for (const it of data.bushes) {
+      world.createCollider(rapier.ColliderDesc.cylinder(1.2 * it.scale, 1.5 * it.scale).setTranslation(it.x, it.y + 1.2 * it.scale - 0.3, it.z), body)
+    }
+    return () => {
+      // when the whole scene unmounts, <Physics> may already have freed the world
+      try {
+        world.removeRigidBody(body)
+      } catch {
+        /* world gone: nothing to clean */
+      }
+    }
   }, [world, rapier, data])
   return null
 }
@@ -129,6 +146,7 @@ export default function Vegetation({ data }: { data: VegetationData }) {
       grass: windMaterial(0.18, 0.6),
       flower: windMaterial(0.12, 0.45),
       rock: new THREE.MeshLambertMaterial({ flatShading: true }),
+      bush: windMaterial(0.1, 2),
     }),
     [],
   )
@@ -138,6 +156,7 @@ export default function Vegetation({ data }: { data: VegetationData }) {
   const grass = useRef<THREE.InstancedMesh>(null)
   const flowers = useRef<THREE.InstancedMesh>(null)
   const rocks = useRef<THREE.InstancedMesh>(null)
+  const bushes = useRef<THREE.InstancedMesh>(null)
 
   useLayoutEffect(() => {
     fill(conifers.current, data.conifers, (it, c) => c.setHSL(0.08 + it.tint * 0.12, 0.25, 0.85 + it.tint * 0.25), undefined, TREE_SINK)
@@ -148,6 +167,7 @@ export default function Vegetation({ data }: { data: VegetationData }) {
     fill(grass.current, data.grass, (it, c) => c.copy(DRY).lerp(LUSH, it.tint))
     fill(flowers.current, data.flowers, (it, c) => c.set(FLOWERS[Math.floor(it.tint * FLOWERS.length)]))
     fill(rocks.current, data.rocks, (it, c) => c.setHSL(0.08 + it.tint * 0.05, 0.08, 0.45 + it.tint * 0.15), rockSquash, ROCK_SINK)
+    fill(bushes.current, data.bushes, (it, c) => c.setHSL(0.18 + it.tint * 0.06, 0.2, 0.8 + it.tint * 0.3), undefined, 0.15)
   }, [data])
 
   return (
@@ -159,6 +179,9 @@ export default function Vegetation({ data }: { data: VegetationData }) {
       <instancedMesh ref={grass} args={[geos.grass, mats.grass, data.grass.length]} receiveShadow />
       <instancedMesh ref={flowers} args={[geos.flower, mats.flower, data.flowers.length]} />
       <instancedMesh ref={rocks} args={[geos.rock, mats.rock, data.rocks.length]} castShadow receiveShadow />
+      {data.bushes.length > 0 && (
+        <instancedMesh ref={bushes} args={[geos.bush, mats.bush, data.bushes.length]} castShadow receiveShadow />
+      )}
     </>
   )
 }

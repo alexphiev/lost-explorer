@@ -15,9 +15,14 @@ export interface HeightField {
   exitBearing: number
 }
 
-/** A sampled square of the height field, centred on the origin. */
+/**
+ * A sampled square of the height field. Local coordinates are centred on the origin;
+ * world = local + (centerX, centerZ).
+ */
 export interface Terrain {
   size: number
+  centerX: number
+  centerZ: number
   segments: number
   /** (segments+1)² heights, row-major: index = iz * (segments+1) + ix. Absolute metres. */
   heights: Float32Array
@@ -106,8 +111,8 @@ export function createHeightField(seed: string): HeightField {
   return { height, moisture, scrub, exitBearing }
 }
 
-/** Sample `field` over a `size` × `size` square centred on the origin. */
-export function sampleTerrain(field: HeightField, size: number, segments: number): Terrain {
+/** Sample `field` over a `size` × `size` square centred on world (centerX, centerZ). */
+export function sampleTerrain(field: HeightField, size: number, segments: number, centerX = 0, centerZ = 0): Terrain {
   const n = segments + 1
   const cell = size / segments
   const heights = new Float32Array(n * n)
@@ -118,24 +123,37 @@ export function sampleTerrain(field: HeightField, size: number, segments: number
     for (let ix = 0; ix < n; ix++) {
       const x = ix * cell - size / 2
       const z = iz * cell - size / 2
-      const h = field.height(x, z)
+      const h = field.height(x + centerX, z + centerZ)
       heights[iz * n + ix] = h
-      moisture[iz * n + ix] = field.moisture(x, z)
+      moisture[iz * n + ix] = field.moisture(x + centerX, z + centerZ)
       if (h < min) min = h
       if (h > max) max = h
     }
   }
-  return { size, segments, heights, moisture, minHeight: min, maxHeight: max }
+  return { size, centerX, centerZ, segments, heights, moisture, minHeight: min, maxHeight: max }
 }
 
-/** The 1 km 3D scene around the origin. */
-export function generateTerrain(seed: string): Terrain {
-  return sampleTerrain(createHeightField(seed), TERRAIN_SIZE, TERRAIN_SEGMENTS)
+/**
+ * Snap a world position to the 3D tile vertex grid, so overlapping tiles share the same vertices
+ * (same heights, same slopes → same trees at the same spot).
+ */
+export function snapToTileGrid(v: number): number {
+  const cell = TERRAIN_SIZE / TERRAIN_SEGMENTS
+  return Math.round(v / cell) * cell
 }
 
-/** Height normalised to the sampled square: 0 = lowest, 1 = highest. */
-export function relHeight(t: Terrain, y: number): number {
-  return (y - t.minHeight) / (t.maxHeight - t.minHeight || 1)
+/** The 1 km 3D tile around world (x, z) (snapped to the tile grid). */
+export function sampleTile(field: HeightField, x: number, z: number): Terrain {
+  return sampleTerrain(field, TERRAIN_SIZE, TERRAIN_SEGMENTS, snapToTileGrid(x), snapToTileGrid(z))
+}
+
+/** Typical world height range (all seeds): used so the same spot looks the same in every tile. */
+const WORLD_LOW = 30
+const WORLD_HIGH = 290
+
+/** Height normalised to the world: 0 = valley floors, 1 = highest peaks. */
+export function worldRel(y: number): number {
+  return clamp01((y - WORLD_LOW) / (WORLD_HIGH - WORLD_LOW))
 }
 
 /**
