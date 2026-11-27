@@ -1,5 +1,6 @@
 import { createNoise2D } from 'simplex-noise'
 import { makeRng } from './rng'
+import { createRivers, createWaterSample, type RiverNetwork, type WaterSample } from './rivers'
 
 export const TERRAIN_SIZE = 1000 // 3D scene: metres, centred on the origin: x,z ∈ [-500, 500]
 export const TERRAIN_SEGMENTS = 256 // cells per side (~3.9 m)
@@ -13,9 +14,14 @@ export interface HeightField {
   scrub(x: number, z: number): boolean
   /** Bearing (degrees clockwise from north) the whole land slowly drains toward: where people live. */
   exitBearing: number
-  /** Water surface height at (x, z), or -Infinity where there is no lake. */
+  /** Water surface height at (x, z) (lake, stream or river), or -Infinity where it is dry. */
   water(x: number, z: number): number
-  /** Lakes whose disc comes within `radius` of (x, z). */
+  /** Lake / pond surface only (streams and rivers excluded), or -Infinity. */
+  lake(x: number, z: number): number
+  /** Stream / river at (x, z)? Fills `out` with level, depth and current (no allocation). */
+  stream(x: number, z: number, out: WaterSample): boolean
+  rivers: RiverNetwork
+  /** Lakes (and ponds) whose disc comes within `radius` of (x, z). */
   lakesNear(x: number, z: number, radius: number): Lake[]
 }
 
@@ -91,7 +97,7 @@ export function createHeightField(seed: string): HeightField {
     }
   })
 
-  const baseHeight = (x: number, z: number) => {
+  const rawHeight = (x: number, z: number) => {
     // Large-scale relief (kilometres) + rolling hills
     let h = 120 + 70 * fbm(macro, x / 1800, z / 1800, 3) + 35 * fbm(hills, x / 350, z / 350, 4)
     h -= TILT * (x * ex + z * ez)
@@ -111,6 +117,11 @@ export function createHeightField(seed: string): HeightField {
     h += 2.5 * detail(x / 35, z / 35)
     return h
   }
+
+  // ---- river valleys: one long valley drains the land toward the exit (people live downstream),
+  // one tributary valley joins it. Their floor only descends, so water always gets out. ----
+  const valleysDesign = designValleys(rng, exitBearing, rawHeight)
+  const baseHeight = (x: number, z: number) => carveValleys(valleysDesign, x, z, rawHeight(x, z))
 
   // ---- lakes: one chance per 1.5 km chunk, only on fairly flat ground, level = lowest point of the shore ----
   const lakeCache = new Map<number, Lake | null>()
@@ -148,7 +159,11 @@ export function createHeightField(seed: string): HeightField {
     }
     return null
   }
-  const height = (x: number, z: number) => {
+  const bigLake = (x: number, z: number) => {
+    const l = lakeAt(x, z)
+    return l && (x - l.x) ** 2 + (z - l.z) ** 2 < l.radius * l.radius ? l.level : -Infinity
+  }
+  const lakeHeight = (x: number, z: number) => {
     const h = baseHeight(x, z)
     const l = lakeAt(x, z)
     if (!l) return h
@@ -160,9 +175,13 @@ export function createHeightField(seed: string): HeightField {
     const bed = d < 1 ? l.level - depth * (1 - d * d) + 0.3 * d : l.level + (dist - l.radius) * 0.35
     return Math.min(h, bed)
   }
+  const rivers = createRivers(seed, lakeHeight, bigLake)
+  const lake = (x: number, z: number) => Math.max(bigLake(x, z), rivers.pond(x, z))
+  const height = (x: number, z: number) => rivers.carve(x, z, lakeHeight(x, z))
+  const ws = createWaterSample()
   const water = (x: number, z: number) => {
-    const l = lakeAt(x, z)
-    return l && (x - l.x) ** 2 + (z - l.z) ** 2 < l.radius * l.radius ? l.level : -Infinity
+    const l = lake(x, z)
+    return rivers.sample(x, z, ws) ? Math.max(l, ws.level) : l
   }
   const lakesNear = (x: number, z: number, radius: number) => {
     const out: Lake[] = []
@@ -175,6 +194,7 @@ export function createHeightField(seed: string): HeightField {
         if (l && Math.hypot(l.x - x, l.z - z) < radius + l.radius) out.push(l)
       }
     }
+    for (const p of rivers.ponds) if (Math.hypot(p.x - x, p.z - z) < radius + p.radius) out.push(p)
     return out
   }
 
@@ -189,7 +209,141 @@ export function createHeightField(seed: string): HeightField {
   // never right where you wake up (origin)
   const scrub = (x: number, z: number) => x * x + z * z > 300 * 300 && fbm(scrubNoise, x / 320, z / 320, 3) > 0.42
 
-  return { height, moisture, scrub: (x, z) => scrub(x, z) && water(x, z) === -Infinity, exitBearing, water, lakesNear }
+  return {
+    height,
+    moisture,
+    scrub: (x, z) => scrub(x, z) && water(x, z) === -Infinity,
+    exitBearing,
+    water,
+    lake,
+    stream: rivers.sample,
+    rivers,
+    lakesNear,
+  }
+}
+
+interface ValleyPath {
+  x: number[]
+  z: number[]
+  floor: number[]
+  buckets: Map<number, number[]>
+}
+const V_BUCKET = 250
+const V_CORE = 220 // metres from the river line: valley shape
+const V_REACH = 520 // natural terrain beyond this
+const vkey = (bx: number, bz: number) => (bx + 1000) * 4096 + (bz + 1000)
+
+function makeValleyPath(xs: number[], zs: number[], rawHeight: (x: number, z: number) => number, endFloor = Infinity): ValleyPath {
+  const n = xs.length
+  // floor: low points of the natural ground (±300 m window) a little under it, never rising downstream
+  const g = xs.map((x, i) => rawHeight(x, zs[i]))
+  const floor = g.map((_, i) => {
+    let m = Infinity
+    for (let j = Math.max(0, i - 3); j <= Math.min(n - 1, i + 3); j++) m = Math.min(m, g[j])
+    return m - 6
+  })
+  for (let i = 1; i < n; i++) floor[i] = Math.min(floor[i], floor[i - 1] - 0.15)
+  if (endFloor < floor[n - 1]) {
+    // a tributary meets the main floor: ease down to it over the last stretch
+    const k = Math.max(1, Math.floor(n * 0.4))
+    for (let i = n - k; i < n; i++) floor[i] = Math.min(floor[i], floor[i] + (endFloor - floor[i]) * ((i - (n - k)) / (k - 1 || 1)))
+  }
+  const buckets = new Map<number, number[]>()
+  for (let i = 0; i < n - 1; i++) {
+    const bx0 = Math.floor((Math.min(xs[i], xs[i + 1]) - V_REACH) / V_BUCKET)
+    const bx1 = Math.floor((Math.max(xs[i], xs[i + 1]) + V_REACH) / V_BUCKET)
+    const bz0 = Math.floor((Math.min(zs[i], zs[i + 1]) - V_REACH) / V_BUCKET)
+    const bz1 = Math.floor((Math.max(zs[i], zs[i + 1]) + V_REACH) / V_BUCKET)
+    for (let bz = bz0; bz <= bz1; bz++) for (let bx = bx0; bx <= bx1; bx++) {
+      const k = vkey(bx, bz)
+      let l = buckets.get(k)
+      if (!l) buckets.set(k, (l = []))
+      l.push(i)
+    }
+  }
+  return { x: xs, z: zs, floor, buckets }
+}
+
+/** A meandering line from (ax, az) to (bx, bz), a node every 100 m. */
+function meanderLine(rng: () => number, ax: number, az: number, bx: number, bz: number, amp: number) {
+  const len = Math.hypot(bx - ax, bz - az)
+  const n = Math.max(2, Math.round(len / 100))
+  const px = -(bz - az) / len
+  const pz = (bx - ax) / len
+  const f1 = 0.8 + rng() * 1.2
+  const f2 = 2 + rng() * 2
+  const o1 = rng() * 6.3
+  const o2 = rng() * 6.3
+  const xs: number[] = []
+  const zs: number[] = []
+  for (let i = 0; i <= n; i++) {
+    const t = i / n
+    const taper = Math.sin(Math.PI * t) ** 0.5
+    const o = amp * taper * (Math.sin(t * f1 * Math.PI * 2 + o1) * 0.7 + Math.sin(t * f2 * Math.PI * 2 + o2) * 0.3)
+    xs.push(ax + (bx - ax) * t + px * o)
+    zs.push(az + (bz - az) * t + pz * o)
+  }
+  return [xs, zs]
+}
+
+function designValleys(rng: () => number, exitBearing: number, rawHeight: (x: number, z: number) => number): ValleyPath[] {
+  const rad = (exitBearing * Math.PI) / 180
+  const ex = Math.sin(rad)
+  const ez = -Math.cos(rad)
+  // main river: from beyond the far side of the map to beyond the exit side, passing 1–2 km beside the start
+  const px = -ez
+  const pz = ex
+  const R = 7000
+  let off = 0
+  let mx: number[] = []
+  let mz: number[] = []
+  for (let k = 0; k < 8; k++) {
+    off = (rng() < 0.5 ? -1 : 1) * (1000 + rng() * 1200)
+    ;[mx, mz] = meanderLine(rng, -ex * R + px * off * 0.6, -ez * R + pz * off * 0.6, ex * R + px * off, ez * R + pz * off, 700)
+    if (Math.min(...mx.map((x, i) => Math.hypot(x, mz[i]))) > V_CORE + 300) break
+  }
+  const main = makeValleyPath(mx, mz, rawHeight)
+  // tributary: from the other side of the start, joining the main river downstream of it (never through the start)
+  let tx: number[] = []
+  let tz: number[] = []
+  let j = 0
+  for (let k = 0; k < 8; k++) {
+    j = Math.floor(mx.length * (0.55 + rng() * 0.2))
+    const sx = -px * off * (2 + rng()) + ex * (rng() - 0.3) * 3000
+    const sz = -pz * off * (2 + rng()) + ez * (rng() - 0.3) * 3000
+    ;[tx, tz] = meanderLine(rng, sx, sz, mx[j], mz[j], 450)
+    if (Math.min(...tx.map((x, i) => Math.hypot(x, tz[i]))) > V_CORE + 300) break
+  }
+  const trib = makeValleyPath(tx, tz, rawHeight, main.floor[j])
+  return [main, trib]
+}
+
+function carveValleys(paths: ValleyPath[], x: number, z: number, h: number): number {
+  for (const p of paths) {
+    const list = p.buckets.get(vkey(Math.floor(x / V_BUCKET), Math.floor(z / V_BUCKET)))
+    if (!list) continue
+    let best = Infinity
+    let fl = 0
+    for (const i of list) {
+      const ax = p.x[i]
+      const az = p.z[i]
+      const sx = p.x[i + 1] - ax
+      const sz = p.z[i + 1] - az
+      const t = clamp01(((x - ax) * sx + (z - az) * sz) / (sx * sx + sz * sz))
+      const d = Math.hypot(x - ax - sx * t, z - az - sz * t)
+      if (d < best) {
+        best = d
+        fl = p.floor[i] + (p.floor[i + 1] - p.floor[i]) * t
+      }
+    }
+    if (best >= V_REACH) continue
+    // a wide flat floor, then U-shaped sides; blends into the natural land (raises basins, cuts ridges)
+    const e = Math.max(0, best - 70)
+    const shape = fl + e * 0.08 + e * e * 0.0012
+    const w = best < V_CORE ? 0 : ((best - V_CORE) / (V_REACH - V_CORE)) ** 2 * (3 - 2 * ((best - V_CORE) / (V_REACH - V_CORE)))
+    h = Math.min(h, shape) * w + shape * (1 - w)
+  }
+  return h
 }
 
 /** Sample `field` over a `size` × `size` square centred on world (centerX, centerZ). */

@@ -13,6 +13,7 @@ const PARCHMENT = hex(0xe9dfc6)
 const WATER = hex(0x6d9bb0)
 const SHORE = hex(0x8fb7c4)
 const WATER_LINE = hex(0x4f7d92)
+const STREAM = hex(0x5a8ca6)
 
 const mix = (a: RGB, b: RGB, t: number): RGB => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
@@ -95,6 +96,38 @@ export function renderMap(valley: Valley, fog: Uint8Array, out: ImageData) {
       data[p + 1] = c[1]
       data[p + 2] = c[2]
       data[p + 3] = 255
+    }
+  }
+
+  // streams and rivers: blue ink lines over the revealed land (rivers drawn thicker)
+  const ink = (ix: number, iz: number, col: RGB) => {
+    if (ix < 0 || iz < 0 || ix >= n || iz >= n) return
+    const i = iz * n + ix
+    const f = fog[i]
+    if (f === FOG_UNSEEN) return
+    const c = f === FOG_FAR ? mix(col, PARCHMENT, 0.5) : col
+    const p = i * 4
+    data[p] = c[0]
+    data[p + 1] = c[1]
+    data[p + 2] = c[2]
+  }
+  for (const r of valley.field.rivers.reaches) {
+    for (let k = 0; k < r.n - 1; k++) {
+      if (!r.wet[k]) continue
+      const big = r.halfW[k] >= 8
+      const col = big ? WATER : STREAM
+      const steps = Math.ceil(Math.hypot(r.x[k + 1] - r.x[k], r.z[k + 1] - r.z[k]) / (cell / 3))
+      for (let j = 0; j < steps; j++) {
+        const x = r.x[k] + ((r.x[k + 1] - r.x[k]) * j) / steps
+        const z = r.z[k] + ((r.z[k + 1] - r.z[k]) * j) / steps
+        const ix = Math.round((x + t.size / 2) / cell)
+        const iz = Math.round((z + t.size / 2) / cell)
+        ink(ix, iz, col)
+        if (big) {
+          ink(ix + 1, iz, col)
+          ink(ix, iz + 1, col)
+        }
+      }
     }
   }
 }

@@ -54,3 +54,11 @@ Code hygiene
 - Quality tier: halve decor counts / radius, cheaper surface noise (1 octave) and no bloom on weak GPUs and phones.
 - Optional CC0 model packs (e.g. Kenney Nature Kit, Quaternius) for hero props if the procedural ones feel too simple; keep total download small.
 - Decor around the player is fixed at scene entry; re-centre it if the player walks far (>200 m).
+
+## Rivers follow-ups
+- Valley generation is ~0.8 s (was 0.12 s), tile ~0.2 s: move generation to a worker or cache the river network if it gets noticeable.
+- Bridges / fords / stepping stones near the village; fallen trees across streams.
+- Waterfalls where a stream drops into a deeper valley (now the water simply stops there), splash particles, sound of running water.
+- Wet clothes: stay cold for a while after leaving the water; a fire to warm up.
+- Riverside vegetation (reeds, alders) and pebble beds in shallow streams.
+

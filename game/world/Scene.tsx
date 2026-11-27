@@ -11,6 +11,7 @@ import { heightAt, sampleTile } from '@/game/core/terrain'
 import { placeDecor, placeVegetation, placeVillage } from '@/game/core/placement'
 import { DAYS_ALLOWED, formatHour } from '@/game/core/travel'
 import type { Point, Valley } from '@/game/core/valley'
+import type { WaterSample } from '@/game/core/rivers'
 import { HAZE_COOL } from '@/game/render/tsl/atmosphere'
 import Terrain from './Terrain'
 import Vegetation, { rockSquash, ROCK_SINK, TREE_SINK } from './Vegetation'
@@ -26,7 +27,12 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
   const forceWebGL = useSettings((s) => s.forceWebGL)
   const run = useJourney((s) => s.run)
   const leaveScene = useJourney((s) => s.leaveScene)
-  const hud = useRef<PlayerHud>({ prompt: null, grip: null, gripBox: null })
+  const hud = useRef<PlayerHud>({ prompt: null, grip: null, gripBox: null, warmth: null, warmthBox: null })
+  // energy when you arrived; cold water eats into it (runStore.coldLoss, applied when you leave)
+  const [startEnergy] = useState(() => {
+    runStore.getState().coldLoss = 0
+    return run?.energy ?? 100
+  })
   const [enteredAt] = useState(() => performance.now())
   const [elapsed, setElapsed] = useState(0)
 
@@ -84,6 +90,10 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
 
   const waterAt = useCallback(
     (x: number, z: number) => valley.field.water(x + world.terrain.centerX, z + world.terrain.centerZ),
+    [valley, world],
+  )
+  const streamAt = useCallback(
+    (x: number, z: number, out: WaterSample) => valley.field.stream(x + world.terrain.centerX, z + world.terrain.centerZ, out),
     [valley, world],
   )
 
@@ -153,6 +163,8 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
               occluders={occluders}
               climbables={climbables}
               waterAt={waterAt}
+              streamAt={streamAt}
+              energy={startEnergy}
               hud={hud}
               onLookAround={onLookAround}
             />
@@ -163,7 +175,7 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
       <div className="pointer-events-none absolute right-3 top-3 rounded bg-black/50 px-3 py-2 text-right font-mono text-sm text-white">
         {run && (
           <div>
-            Day {run.day}/{DAYS_ALLOWED} · {formatHour(hour % 24)} · energy {Math.round(run.energy)}
+            Day {run.day}/{DAYS_ALLOWED} · {formatHour(hour % 24)} · energy {Math.max(0, Math.round(startEnergy - runStore.getState().coldLoss))}
             {forceWebGL && <span className="ml-2 text-amber-300">(WebGL)</span>}
           </div>
         )}
@@ -178,6 +190,13 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
           <span className="text-xs">Grip</span>
           <div className="h-1.5 w-40 overflow-hidden rounded bg-black/40">
             <div ref={(el) => { hud.current.grip = el }} className="h-full w-full origin-left" />
+          </div>
+        </div>
+        {/* warmth = energy left while cold water drains it: shown only in the water */}
+        <div ref={(el) => { hud.current.warmthBox = el }} className="flex items-center gap-2 opacity-0 transition-opacity">
+          <span className="text-xs">Warmth</span>
+          <div className="h-1.5 w-40 overflow-hidden rounded bg-black/40">
+            <div ref={(el) => { hud.current.warmth = el }} className="h-full w-full origin-left" />
           </div>
         </div>
       </div>

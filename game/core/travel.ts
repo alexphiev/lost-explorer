@@ -1,4 +1,5 @@
 import { makeRng } from './rng'
+import { createWaterSample } from './rivers'
 import { heightAt, slopeAt } from './terrain'
 import { isScrub, MAX_DOWNHILL, MAX_UPHILL, type Valley } from './valley'
 import { createFog, revealAround, revealViewshed } from './viewshed'
@@ -10,6 +11,8 @@ const CHUNK_HOURS = 2
 const STEP = 15 // metres per simulation step
 const WALK_SPEED = 2 // km/h off-trail on flat open ground
 const VILLAGE_RADIUS = 120
+const WADE_DEPTH = 1.2 // deeper streams (and all rivers) have to be swum: on foot, in the 3D scene
+const ws = createWaterSample()
 
 export type StopKind =
   | 'start'
@@ -20,6 +23,7 @@ export type StopKind =
   | 'drop'
   | 'scrub'
   | 'lake'
+  | 'river'
   | 'edge'
   | 'berries'
   | 'smoke'
@@ -109,6 +113,7 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
   let { x, z, hour, energy, smelledSmoke, rolls } = s
   const path = [...s.path]
   let elapsed = 0
+  let wading = false
   let stop: Stop | null = null
   const dir = compassName(bearing)
 
@@ -130,10 +135,32 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
       stop = { kind: 'drop', message: `The ground drops away sharply to the ${dir}. Too dangerous.` }
       break
     }
-    if (h1 < v.field.water(nx, nz) - 0.3) {
+    if (h1 < v.field.lake(nx, nz) - 0.3) {
       stop = { kind: 'lake', message: `A lake blocks the way ${dir}. Go around, or explore on foot and swim across.` }
       break
     }
+    // streams are narrow: look at three points along the step
+    let wet = false
+    let deep = false
+    let river = false
+    for (let k = 1; k <= 3 && !deep; k++) {
+      if (!v.field.stream(x + dx * STEP * (k / 3), z + dz * STEP * (k / 3), ws)) continue
+      wet = true
+      deep = ws.river || ws.depth > WADE_DEPTH
+      river = ws.river
+    }
+    if (deep) {
+      stop = river
+        ? { kind: 'river', message: `A river cuts across your way ${dir}, wide and cold, its current strong. Follow the bank, or explore on foot and swim across.` }
+        : { kind: 'river', message: `A deep stream cuts across your way ${dir}. Too deep to wade: explore on foot and swim across, or follow it.` }
+      break
+    }
+    if (wet && !wading) {
+      // wading across a shallow stream: a few wet, cold minutes
+      hour += 0.05
+      energy -= 1
+    }
+    wading = wet
     if (isScrub(v.field, nx, nz)) {
       stop = { kind: 'scrub', message: `Thick, thorny scrub blocks the way ${dir}.` }
       break
