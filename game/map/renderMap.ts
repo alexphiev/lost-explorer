@@ -113,7 +113,7 @@ export function renderMap(valley: Valley, fog: Uint8Array, out: ImageData) {
   }
   for (const r of valley.field.rivers.reaches) {
     for (let k = 0; k < r.n - 1; k++) {
-      if (!r.wet[k]) continue
+      if (!r.wet[k] || !r.wet[k + 1]) continue
       const big = r.halfW[k] >= 8
       const col = big ? WATER : STREAM
       const steps = Math.ceil(Math.hypot(r.x[k + 1] - r.x[k], r.z[k + 1] - r.z[k]) / (cell / 3))

@@ -144,9 +144,14 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
     let deep = false
     let river = false
     for (let k = 1; k <= 3 && !deep; k++) {
-      if (!v.field.stream(x + dx * STEP * (k / 3), z + dz * STEP * (k / 3), ws)) continue
+      const px = x + dx * STEP * (k / 3)
+      const pz = z + dz * STEP * (k / 3)
+      if (!v.field.stream(px, pz, ws)) continue
+      // the sample reaches past the banks: only actual water counts, as deep as it is right there
+      const depth = ws.level - v.field.height(px, pz)
+      if (depth <= 0) continue
       wet = true
-      deep = ws.river || ws.depth > WADE_DEPTH
+      deep = depth > WADE_DEPTH
       river = ws.river
     }
     if (deep) {
@@ -158,6 +163,7 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
     if (wet && !wading) {
       // wading across a shallow stream: a few wet, cold minutes
       hour += 0.05
+      elapsed += 0.05
       energy -= 1
     }
     wading = wet

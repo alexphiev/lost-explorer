@@ -54,11 +54,13 @@ function buildStreams(field: HeightField, tile: Terrain) {
   const idx: number[] = []
   for (const r of field.rivers.near(tile.centerX, tile.centerZ, half + 50)) {
     let prev = -1 // vertex index of the previous node's left edge, −1 at the start of a run
+    const inLake = Array.from({ length: r.n }, (_, i) => field.lake(r.x[i], r.z[i]) > -Infinity)
     for (let i = 0; i < r.n; i++) {
       const x = r.x[i] - tile.centerX
       const z = r.z[i] - tile.centerZ
-      const lake = field.lake(r.x[i], r.z[i]) > -Infinity
-      if (!r.wet[i] || lake || Math.abs(x) > half || Math.abs(z) > half) {
+      // inside a lake the ribbon is hidden under its surface: keep the first node in, so the stream reaches the shore
+      const drowned = inLake[i] && !(i > 0 && !inLake[i - 1]) && !(i < r.n - 1 && !inLake[i + 1])
+      if (!r.wet[i] || drowned || Math.abs(x) > half || Math.abs(z) > half) {
         prev = -1
         continue
       }
