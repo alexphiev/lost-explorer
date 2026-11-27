@@ -11,6 +11,7 @@ export interface Pose {
   lean: number // torso pitch on top of the body
   torsoYaw: number
   thigh: number[]
+  legZ: number[] // thigh rotation.z (legs spread sideways; only set by climbing IK)
   knee: number[]
   ankle: number[]
   armX: number[]
@@ -27,6 +28,7 @@ export function createPose(): Pose {
     lean: 0,
     torsoYaw: 0,
     thigh: [0, 0],
+    legZ: [0, 0],
     knee: [0, 0],
     ankle: [0, 0],
     armX: [0, 0],
@@ -38,31 +40,17 @@ export function createPose(): Pose {
 const TAU = Math.PI * 2
 
 /**
- * Climbing, by steepness. `steep` 0 = slab (~40°, body leaning onto the slope, scrambling on all fours),
- * 1 = vertical wall / trunk (body upright against it, arms reaching overhead, high steps).
- * `phase` advances with the distance climbed; `moving` 0..1. Limbs move in diagonal pairs (left hand + right foot).
+ * Climbing: body only (hands and feet are planted on the surface by IK in Player).
+ * `pitch` = forward tilt that keeps the body parallel to the surface (0 on a vertical wall / trunk),
+ * `sway` −1..1 = which diagonal pair is reaching (+1 = left hand + right foot), 0 when all four are planted.
  */
-export function climbPose(phase: number, steep: number, moving: number, out: Pose) {
-  const a = phase * TAU
-  for (let i = 0; i < 2; i++) {
-    const side = i === 0 ? 1 : -1
-    const s = Math.sin(a + i * Math.PI) * moving // this hand reaches while the other pulls
-    const legS = Math.sin(a + (1 - i) * Math.PI) * moving
-    // arms: slab → reach forward along the slope; wall → reach overhead
-    out.armX[i] = -(1.5 + 1.1 * steep) - 0.45 * s
-    out.armZ[i] = side * (0.25 - 0.1 * steep)
-    out.fore[i] = -(0.35 + 0.6 * Math.max(0, -s)) // the pulling arm bends
-    // legs: high step then push
-    out.thigh[i] = -(0.55 + 0.45 * steep) - 0.45 * legS
-    out.knee[i] = 0.9 + 0.5 * steep + 0.45 * legS
-    out.ankle[i] = -0.2
-  }
-  out.bodyPitch = (1 - steep) * 0.75 // lie onto a slab, upright against a wall
-  out.bodyY = -0.1
-  out.bodyRoll = Math.sin(a) * 0.06 * moving
+export function climbPose(pitch: number, sway: number, out: Pose) {
+  out.bodyPitch = pitch
+  out.bodyY = 0
+  out.bodyRoll = -sway * 0.06 // lean away from the reaching hand onto the supporting one
   out.bodyYaw = 0
   out.lean = 0.05
-  out.torsoYaw = Math.sin(a) * 0.12 * moving
+  out.torsoYaw = sway * 0.1
 }
 
 /** Scrambling on a steep walkable slope (25–40°): crouched, hands brushing the slope ahead. */

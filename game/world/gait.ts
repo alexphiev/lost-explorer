@@ -87,3 +87,31 @@ export function solveLeg(hipY: number, footY: number, footZ: number, groundPitch
   // keep the sole parallel to the ground (positive rotation tips the toe down)
   out.ankle = -(out.thigh + out.knee) - Math.atan(groundPitch) - toeLift
 }
+
+export interface LimbAngles {
+  swing: number // root joint rotation.x
+  out: number // root joint rotation.z (sideways)
+  bend: number // middle joint (elbow / knee) rotation.x
+}
+
+/**
+ * Two-bone IK in 3D for a limb that hangs along −y from its root joint, with three's default Euler order
+ * (XYZ: rotation.z spreads the limb sideways first, then rotation.x swings it). Bones `a` (upper) and `b` (lower).
+ * (tx, ty, tz) = end target relative to the root joint, in the root group's parent frame.
+ * `bendSign` −1 = elbow (forearm folds forward), +1 = knee (shin folds back). Out of reach → limb straight toward it.
+ */
+export function solveLimb(tx: number, ty: number, tz: number, a: number, b: number, bendSign: number, out: LimbAngles) {
+  const len = Math.hypot(tx, ty, tz) || 1e-6
+  const d = Math.min(Math.max(len, Math.abs(a - b) + 0.03), a + b - 0.002)
+  const k = d / len
+  const cosB = (d * d - a * a - b * b) / (2 * a * b)
+  const bend = bendSign * Math.acos(Math.min(Math.max(cosB, -1), 1))
+  // end point in the upper bone's frame (planar chain in its y–z plane)
+  const hy = -a - b * Math.cos(bend)
+  const hz = -b * Math.sin(bend)
+  const side = Math.asin(Math.min(Math.max((tx * k) / Math.max(-hy, 0.05), -0.95), 0.95))
+  const sw = Math.atan2(tz * k, ty * k) - Math.atan2(hz, hy * Math.cos(side))
+  out.swing = Math.atan2(Math.sin(sw), Math.cos(sw))
+  out.out = side
+  out.bend = bend
+}

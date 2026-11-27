@@ -76,6 +76,7 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] Swimming is carried by the current (stop stroking to drift); wading pushes you downstream the deeper you stand
 - [x] Cold water drains energy (Warmth bar while in water; weaker strokes below 20); applied to the run when leaving the scene
 - [x] Map: streams and rivers inked in blue; rivers and deep streams stop a walk, shallow ones are waded (+3 min, −1 energy)
+- [x] Issue #18: climbing with hands and feet planted on the surface (IK onto holds on slope / cliff / rock / trunk, diagonal pairs reach in turn, hands push on the edge when mantling)
 
 ## Current task
 None. Rivers done, PR open.
@@ -139,3 +140,4 @@ None.
 - Stream valleys are wide V's (bank 0.25 + 0.1·e + 0.0016·e² m within 170 m); upstream of a segment its carve uses the water level alongside upstream, so steep stretches don't undercut themselves.
 - Streams are 6–9 m wide: narrower ones fall between the 3.9 m vertices of the 3D mesh and show as dashes.
 - Cold water: −0.22 energy/s swimming (+0.12 in strong current), −0.04·wade/s wading; stored in runStore.coldLoss (frame loop), applied in leaveScene.
+- Climbing limbs: world-fixed holds per hand/foot, projected onto the surface (terrain via `heightAt` along the slope normal, rocks/trunks as cylinders); a diagonal pair reaches when a hold is > 0.3 m from its ideal spot, lands 0.15 m ahead; 3D two-bone IK `solveLimb` (gait.ts); body pushed to 0.4 m off the surface and pitched parallel to it.

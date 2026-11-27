@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu'
 import { heightAt, type Terrain } from '@/game/core/terrain'
 import { createWaterSample, type WaterSample } from '@/game/core/rivers'
 import { runStore } from '@/game/state/run'
-import { bodyDropFor, footAlongCycle, HIP_Y, solveLeg, slopeSpeedFactor, strideLength, THIGH, type FootTarget, type LegAngles } from './gait'
+import { bodyDropFor, footAlongCycle, HIP_Y, SHIN, solveLeg, solveLimb, slopeSpeedFactor, strideLength, THIGH, type FootTarget, type LegAngles, type LimbAngles } from './gait'
 import { climbPose, createPose, mantlePose, scrambleArms, swimPose } from './poses'
 
 export type Controls = 'forward' | 'backward' | 'leftward' | 'rightward' | 'jump' | 'run'
@@ -43,6 +43,16 @@ const SWIM_DEPTH = 1.3 // water deeper than this under you → swim
 const ROOT_TO_FEET = 1.0
 const COLLIDE_ALL = 0xffffffff // Rapier collision groups: (memberships << 16) | filter
 const COLLIDE_NONE = 0x00010000
+// arm model (see <Arm>): shoulder in the torso group, upper arm to the elbow, forearm to the hand's centre
+const SHOULDER_X = 0.25
+const SHOULDER_Y = 0.5
+const UPPER_ARM = 0.32
+const FOREARM = 0.31
+const HAND_R = 0.05
+// climbing holds: limbs move in diagonal pairs (0 = left hand + right foot, 1 = right hand + left foot)
+const HOLD_STEP = 0.3 // a planted limb this far from its ideal hold (body moved on) lets its pair reach again
+const HOLD_LEAD = 0.15 // new holds land this far ahead in the direction of travel
+const BODY_OFF_WALL = 0.4 // body origin (hips) distance from the surface while climbing
 
 /** Camera occluders: flat [x, z, yBottom, yTop, radius] per tree crown / rock, in tile coordinates. */
 export type Occluders = Float32Array
@@ -79,6 +89,39 @@ const feetY = [0, 0]
 const feetZ = [0, 0]
 const feetSwing = [0, 0]
 const pose = createPose()
+// climbing surface frame (world): outward normal, up along the surface, left along it
+const cN = new THREE.Vector3()
+const cU = new THREE.Vector3()
+const cL = new THREE.Vector3()
+const V = new THREE.Vector3()
+const Q = new THREE.Vector3() // projectSurface output: point on the surface
+const QN = new THREE.Vector3() // and its outward normal
+const holds = new Float32Array(12) // world x, y, z per limb: 0 left hand, 1 right hand, 2 left foot, 3 right foot
+const homes = new Float32Array(12)
+const swingFrom = new Float32Array(12)
+const limb: LimbAngles = { swing: 0, out: 0, bend: 0 }
+/** surface being climbed: terrain (cN is its normal) or a vertical cylinder (rock / trunk) */
+const surf = { cylinder: false, rock: false, cx: 0, cz: 0, r: 1, top: 0 }
+
+/** Project a world point onto the climbed surface → Q, QN. Rocks: holds above the top land on its top edge. */
+function projectSurface(terrain: Terrain, x: number, y: number, z: number, clampTop: boolean) {
+  if (surf.cylinder) {
+    const dx = x - surf.cx
+    const dz = z - surf.cz
+    const d = Math.hypot(dx, dz) || 1e-3
+    QN.set(dx / d, 0, dz / d)
+    if (clampTop && surf.rock && y > surf.top) {
+      Q.set(surf.cx + QN.x * (surf.r - 0.12), surf.top, surf.cz + QN.z * (surf.r - 0.12))
+      QN.set(0, 1, 0)
+    } else Q.set(surf.cx + QN.x * surf.r, y, surf.cz + QN.z * surf.r)
+    return
+  }
+  // terrain: slide along the normal onto the slope (twice: it curves), then sit exactly on the mesh
+  Q.set(x, y, z)
+  for (let it = 0; it < 2; it++) Q.addScaledVector(cN, -(Q.y - heightAt(terrain, Q.x, Q.z)) * cN.y)
+  Q.y = heightAt(terrain, Q.x, Q.z)
+  QN.copy(cN)
+}
 
 type G = React.RefObject<THREE.Group | null>
 
@@ -210,6 +253,20 @@ export default function Player({
     gripShown: -1,
     warmthShown: -1,
     coldTime: 0, // seconds in cold water (for the first warning)
+    bodyX: 0, // body group offset in the root (climbing: pressed against the surface)
+    bodyZ: 0,
+    px: 0, // last root position → velocity (climbing holds lead in the direction of travel)
+    py: 0,
+    pz: 0,
+    vx: 0,
+    vy: 0,
+    vz: 0,
+    climbPitch: 0,
+    limbsReady: false,
+    swingPair: -1, // diagonal pair reaching for new holds, −1 = all four planted
+    swingS: 0,
+    lastPair: 1,
+    ikBlend: 0,
   })
   const [, getKeys] = useKeyboardControls<Controls>()
   const [debugLog] = useState(() => new URLSearchParams(window.location.search).has('debug'))
@@ -273,6 +330,12 @@ export default function Player({
     if (g.mode === 'ground') e.setMovement(input)
 
     root.current.getWorldPosition(P)
+    g.vx = damp(g.vx, (P.x - g.px) / Math.max(rawDt, 1e-3), 8, dt)
+    g.vy = damp(g.vy, (P.y - g.py) / Math.max(rawDt, 1e-3), 8, dt)
+    g.vz = damp(g.vz, (P.z - g.pz) / Math.max(rawDt, 1e-3), 8, dt)
+    g.px = P.x
+    g.py = P.y
+    g.pz = P.z
     const hC = heightAt(terrain, P.x, P.z)
     const water = waterAt(P.x, P.z)
     const feet = P.y - ROOT_TO_FEET
@@ -332,6 +395,9 @@ export default function Player({
       }
       g.mode = mode
       g.phase = 0
+      g.limbsReady = false
+      g.swingPair = -1
+      g.ikBlend = 0
     }
     function toGround() {
       if (g.mode === 'ground') return
@@ -427,6 +493,11 @@ export default function Player({
         const ux = gx / gl
         const uz = gz / gl
         climbSteep = clamp((theta - 0.7) / 0.43, 0, 1) // 40° → 0, 65° → 1
+        surf.cylinder = false
+        cN.set(-gx, 1, -gz).normalize()
+        cU.set(ux * Math.cos(theta), Math.sin(theta), uz * Math.cos(theta))
+        cL.set(uz, 0, -ux)
+        g.climbPitch = 0.9 * (Math.PI / 2 - theta) // lie along the slope
         const speed = (0.8 - 0.4 * climbSteep) * speedMul
         // up the slope along the surface, sideways along the contour (left = up × facing)
         const cosT = Math.cos(theta)
@@ -457,6 +528,17 @@ export default function Player({
         // around and up a rock or a trunk
         const c = climbableAt(g.target)
         climbSteep = 1
+        surf.cylinder = true
+        surf.rock = !c.tree
+        surf.cx = c.x
+        surf.cz = c.z
+        surf.r = c.r - (c.tree ? 0.28 : 0.35) // the climbing radius keeps the capsule off the surface
+        surf.top = c.top
+        const na = Math.atan2(P.z - c.z, P.x - c.x)
+        cN.set(Math.cos(na), 0, Math.sin(na))
+        cU.set(0, 1, 0)
+        cL.set(-cN.z, 0, cN.x)
+        g.climbPitch = 0
         const speed = (c.tree ? 0.7 : 0.5) * speedMul
         g.angle += (leftRight * speed * dt) / c.r
         g.climbY += upDown * speed * dt
@@ -558,13 +640,16 @@ export default function Player({
 
     // ================= poses =================
     let kJoints = 45
+    pose.legZ[0] = 0
+    pose.legZ[1] = 0
+    if (g.mode !== 'climb' && g.mode !== 'mantle') g.ikBlend = 0
     const runBlend0 = g.mode === 'ground' ? clamp((e.moveSpeed - 2.3) / 1.5, 0, 1) : 0
     if (g.mode === 'ground') {
       groundGait()
     } else if (g.mode === 'climb') {
-      climbPose(g.phase, climbSteep, moving, pose)
-      g.bodyY = damp(g.bodyY, pose.bodyY, 10, dt)
-      kJoints = 14
+      climbPose(g.climbPitch, g.swingPair < 0 ? 0 : (g.swingPair === 0 ? 1 : -1) * Math.sin(Math.PI * g.swingS), pose)
+      g.ikBlend = Math.min(1, g.ikBlend + dt / 0.3)
+      kJoints = 12 + 300 * g.ikBlend * g.ikBlend // ease in from the previous pose, then follow the IK exactly
     } else if (g.mode === 'mantle') {
       mantlePose(g.mantleT, pose)
       g.bodyY = damp(g.bodyY, pose.bodyY, 14, dt)
@@ -703,35 +788,148 @@ export default function Player({
     }
 
     // ================= apply the pose =================
+    // climbing: press the body against the surface (the collider capsule keeps the root ~1 m above a slab)
+    if (g.mode === 'climb') {
+      projectSurface(terrain, P.x, P.y, P.z, false)
+      V.copy(Q).addScaledVector(QN, BODY_OFF_WALL)
+      root.current.worldToLocal(V)
+      g.bodyX = damp(g.bodyX, V.x, 6, dt)
+      g.bodyY = damp(g.bodyY, V.y, 6, dt)
+      g.bodyZ = damp(g.bodyZ, V.z, 6, dt)
+    } else {
+      g.bodyX = damp(g.bodyX, 0, 8, dt)
+      g.bodyZ = damp(g.bodyZ, 0, 8, dt)
+    }
+    if (body.current) {
+      body.current.position.set(g.bodyX, g.bodyY, g.bodyZ)
+      body.current.rotation.x = damp(body.current.rotation.x, pose.bodyPitch, 6, dt)
+      body.current.rotation.z = damp(body.current.rotation.z, pose.bodyRoll, 8, dt)
+      body.current.rotation.y = damp(body.current.rotation.y, pose.bodyYaw, 8, dt)
+    }
+    g.lean = damp(g.lean, pose.lean, 6, dt)
+    if (torso.current) {
+      torso.current.rotation.x = g.lean
+      torso.current.rotation.y = damp(torso.current.rotation.y, pose.torsoYaw, 8, dt)
+    }
+    // hands and feet on holds: climbing (all four), mantling (hands push on the edge for the first half)
+    let kArm = g.mode === 'ground' ? 14 : kJoints
+    let kArmZ = 8
+    let kFore = 14
+    const handsIk = g.mode === 'mantle' && g.limbsReady && g.mantleT < 0.6
+    if ((g.mode === 'climb' || handsIk) && body.current && torso.current) {
+      climbLimbs(body.current, torso.current)
+      if (handsIk) kArm = 12 + 300 * g.ikBlend * g.ikBlend
+      kArmZ = kArm
+      kFore = kArm
+    }
+
+    function climbLimbs(bodyG: THREE.Group, torsoG: THREE.Group) {
+      bodyG.updateWorldMatrix(true, true)
+      if (g.mode === 'climb') {
+        // ideal hold of each limb: up the surface from the shoulder / down from the hip, a bit ahead when moving
+        const sp = Math.hypot(g.vx, g.vy, g.vz)
+        const lead = anyMove && sp > 0.05 ? HOLD_LEAD / sp : 0
+        for (let l = 0; l < 4; l++) {
+          const side = l % 2 === 0 ? 1 : -1
+          if (l < 2) torsoG.localToWorld(V.set(side * SHOULDER_X, SHOULDER_Y, 0))
+          else bodyG.localToWorld(V.set(side * HIP_X, HIP_Y, 0))
+          V.addScaledVector(cU, l < 2 ? 0.38 : -0.42).addScaledVector(cL, side * (l < 2 ? 0.1 : 0.07))
+          V.x += g.vx * lead
+          V.y += g.vy * lead
+          V.z += g.vz * lead
+          projectSurface(terrain, V.x, V.y, V.z, true)
+          const off = l < 2 ? HAND_R : 0.02
+          homes[l * 3] = Q.x + QN.x * off
+          homes[l * 3 + 1] = Q.y + QN.y * off
+          homes[l * 3 + 2] = Q.z + QN.z * off
+        }
+        let err0 = 0
+        let err1 = 0
+        for (let l = 0; l < 4; l++) {
+          const o = l * 3
+          const d = Math.hypot(holds[o] - homes[o], holds[o + 1] - homes[o + 1], holds[o + 2] - homes[o + 2])
+          if (l === 0 || l === 3) err0 = Math.max(err0, d)
+          else err1 = Math.max(err1, d)
+        }
+        if (!g.limbsReady || Math.max(err0, err1) > 1.2) {
+          holds.set(homes) // just started (or teleported): grab where the limbs fall
+          g.limbsReady = true
+          g.swingPair = -1
+        } else if (g.swingPair < 0) {
+          const thr = anyMove ? HOLD_STEP : HOLD_STEP + 0.12 // at rest, only fix a really awkward hold
+          const p = err0 > thr && (err0 >= err1 || g.lastPair === 1) ? 0 : err1 > thr ? 1 : -1
+          if (p >= 0) {
+            g.swingPair = p
+            g.swingS = 0
+            swingFrom.set(holds)
+          }
+        }
+        if (g.swingPair >= 0) {
+          // the reaching pair lifts off, arcs to its new hold (tracked as the body moves) and plants
+          g.swingS = Math.min(1, g.swingS + dt / (input.run ? 0.2 : 0.28))
+          const t = g.swingS
+          const e = t * t * (3 - 2 * t)
+          const lift = 0.1 * Math.sin(Math.PI * t)
+          for (let l = 0; l < 4; l++) {
+            if ((l === 0 || l === 3 ? 0 : 1) !== g.swingPair) continue
+            for (let c = 0; c < 3; c++) {
+              const o = l * 3 + c
+              holds[o] = swingFrom[o] + (homes[o] - swingFrom[o]) * e + (c === 0 ? cN.x : c === 1 ? cN.y : cN.z) * lift
+            }
+          }
+          if (t >= 1) {
+            g.lastPair = g.swingPair
+            g.swingPair = -1
+          }
+        }
+      }
+      // two-bone IK onto the holds (each target brought into its limb's parent frame)
+      const footTilt = surf.cylinder ? 0.1 : Math.min(Math.PI / 2 - g.climbPitch / 0.9, 0.7) // smear on slabs, toes in on walls
+      for (let l = 0; l < 4; l++) {
+        if (handsIk && l >= 2) break
+        const i = l % 2
+        const side = i === 0 ? 1 : -1
+        V.set(holds[l * 3], holds[l * 3 + 1], holds[l * 3 + 2])
+        if (l < 2) {
+          torsoG.worldToLocal(V)
+          solveLimb(V.x - side * SHOULDER_X, V.y - SHOULDER_Y, V.z, UPPER_ARM, FOREARM, -1, limb)
+          pose.armX[i] = limb.swing
+          pose.armZ[i] = limb.out
+          pose.fore[i] = limb.bend
+        } else {
+          bodyG.worldToLocal(V)
+          solveLimb(V.x - side * HIP_X, V.y - HIP_Y, V.z, THIGH, SHIN, 1, limb)
+          pose.thigh[i] = limb.swing
+          pose.legZ[i] = limb.out
+          pose.knee[i] = limb.bend
+          pose.ankle[i] = clamp(-(limb.swing + limb.bend) - bodyG.rotation.x - footTilt, -1.2, 1)
+        }
+      }
+    }
+
     for (let i = 0; i < 2; i++) {
       const th = thighs[i].current
       const sh = shins[i].current
       const an = ankles[i].current
       const a = arms[i].current
       const f = fores[i].current
-      if (th) th.rotation.x = ease(th.rotation.x, pose.thigh[i], kJoints, dt)
+      if (th) {
+        th.rotation.x = ease(th.rotation.x, pose.thigh[i], kJoints, dt)
+        th.rotation.z = ease(th.rotation.z, pose.legZ[i], kJoints, dt)
+      }
       if (sh) sh.rotation.x = ease(sh.rotation.x, pose.knee[i], kJoints, dt)
       if (an) an.rotation.x = ease(an.rotation.x, pose.ankle[i], kJoints, dt)
       if (a) {
-        a.rotation.x = ease(a.rotation.x, pose.armX[i], g.mode === 'ground' ? 14 : kJoints, dt)
-        a.rotation.z = ease(a.rotation.z, pose.armZ[i], 8, dt)
+        a.rotation.x = ease(a.rotation.x, pose.armX[i], kArm, dt)
+        a.rotation.z = ease(a.rotation.z, pose.armZ[i], kArmZ, dt)
       }
-      if (f) f.rotation.x = ease(f.rotation.x, pose.fore[i], 14, dt)
+      if (f) f.rotation.x = ease(f.rotation.x, pose.fore[i], kFore, dt)
     }
-    g.lean = damp(g.lean, pose.lean, 6, dt)
     // breathing: faster and deeper after running, climbing or swimming
     const effort = g.mode === 'ground' ? (runBlend0 > 0.5 ? 0.12 : -0.04) : g.mode === 'swim' ? 0.05 : 0.07
     g.exertion = clamp(g.exertion + dt * effort, 0, 1)
     g.breath += dt * Math.PI * 2 * (0.28 + 0.6 * g.exertion)
-    if (body.current) {
-      body.current.position.y = g.bodyY
-      body.current.rotation.x = damp(body.current.rotation.x, pose.bodyPitch, 6, dt)
-      body.current.rotation.z = damp(body.current.rotation.z, pose.bodyRoll, 8, dt)
-      body.current.rotation.y = damp(body.current.rotation.y, pose.bodyYaw, 8, dt)
-    }
     if (torso.current) {
-      torso.current.rotation.x = g.lean
-      torso.current.rotation.y = damp(torso.current.rotation.y, pose.torsoYaw, 8, dt)
       const chest = 1 + Math.sin(g.breath) * (0.008 + 0.025 * g.exertion)
       torso.current.scale.set(chest, 1 + (chest - 1) * 0.5, chest)
     }
