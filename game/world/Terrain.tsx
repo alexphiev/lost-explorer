@@ -1,8 +1,9 @@
 'use client'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import * as THREE from 'three/webgpu'
 import { CuboidCollider, HeightfieldCollider, RigidBody } from '@react-three/rapier'
 import { worldRel, type Terrain as TerrainData } from '@/game/core/terrain'
+import { terrainMaterial } from '@/game/render/tsl/surface'
 
 const DRY_GRASS = new THREE.Color('#c2b25f')
 const LUSH_GRASS = new THREE.Color('#77a24a')
@@ -88,7 +89,11 @@ function buildGeometry(t: TerrainData) {
 }
 
 export default function Terrain({ terrain }: { terrain: TerrainData }) {
+  const material = useMemo(terrainMaterial, [])
   const geometry = useMemo(() => buildGeometry(terrain), [terrain])
+  // the material is passed as a primitive and the geometry as a prop: R3F won't free them for us
+  useEffect(() => () => material.dispose(), [material])
+  useEffect(() => () => geometry.dispose(), [geometry])
 
   // Rapier heightfields are column-major: index = iz + ix * n
   const heights = useMemo(() => {
@@ -102,7 +107,7 @@ export default function Terrain({ terrain }: { terrain: TerrainData }) {
   return (
     <>
       <mesh geometry={geometry} receiveShadow>
-        <meshLambertMaterial vertexColors flatShading />
+        <primitive object={material} attach="material" />
       </mesh>
       <RigidBody type="fixed" colliders={false}>
         <HeightfieldCollider

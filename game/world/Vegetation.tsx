@@ -1,10 +1,11 @@
 'use client'
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useRapier } from '@react-three/rapier'
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { Instance, Vegetation as VegetationData } from '@/game/core/placement'
 import { windMaterial } from '@/game/render/tsl/wind'
+import { texturedLambert } from '@/game/render/tsl/surface'
 
 function painted(geo: THREE.BufferGeometry, hex: string, y = 0, x = 0, z = 0) {
   const g = geo.index ? geo.toNonIndexed() : geo
@@ -133,6 +134,11 @@ const FLOWERS = ['#f4f1e6', '#f1d65a', '#a98fd6', '#d9473a', '#f3b6c8']
 const DRY = new THREE.Color('#d8c477')
 const LUSH = new THREE.Color('#9cc46a')
 
+/** Free the GPU resources a component created itself (R3F doesn't dispose constructor args or primitives). */
+function useDisposeOnUnmount(...groups: Record<string, { dispose(): void }>[]) {
+  useEffect(() => () => groups.forEach((g) => Object.values(g).forEach((r) => r.dispose())), groups)
+}
+
 export default function Vegetation({ data }: { data: VegetationData }) {
   const geos = useMemo(makeGeometries, [])
   const mats = useMemo(
@@ -142,11 +148,12 @@ export default function Vegetation({ data }: { data: VegetationData }) {
       broadleaf: windMaterial(0.45, 6),
       grass: windMaterial(0.18, 0.6),
       flower: windMaterial(0.12, 0.45),
-      rock: new THREE.MeshLambertMaterial({ flatShading: true }),
+      rock: texturedLambert(1.8, 2), // grainy stone
       bush: windMaterial(0.1, 2),
     }),
     [],
   )
+  useDisposeOnUnmount(geos, mats)
   const conifers = useRef<THREE.InstancedMesh>(null)
   const broadleafTrunks = useRef<THREE.InstancedMesh>(null)
   const broadleaves = useRef<THREE.InstancedMesh>(null)

@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu'
 import { attribute, clamp, float, positionLocal, sin, time, vec3 } from 'three/tsl'
+import { surfaceVariation } from './surface'
 
 /**
  * Lambert material whose vertices sway in the wind.
@@ -19,5 +20,6 @@ export function windMaterial(strength: number, height: number) {
     .add(0.25)
   const offset = gust.mul(bend).mul(float(strength))
   mat.positionNode = positionLocal.add(vec3(offset, 0, offset.mul(0.45)))
+  mat.colorNode = surfaceVariation(0.8, 1.5) // leaves and grass are never one flat colour
   return mat
 }

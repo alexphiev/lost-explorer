@@ -825,7 +825,7 @@ export default function Player({
           </group>
         </group>
       </Ecctrl>
-      <EcctrlCameraControls ref={cam} makeDefault smoothTime={0.12} minDistance={2.5} maxDistance={20} maxPolarAngle={Math.PI * 0.5} />
+      <EcctrlCameraControls ref={cam} makeDefault smoothTime={0.12} minDistance={2.5} maxDistance={20} maxPolarAngle={Math.PI * 0.62} />
     </>
   )
 }
