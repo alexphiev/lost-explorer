@@ -11,6 +11,7 @@ const CHUNK_HOURS = 2
 const STEP = 15 // metres per simulation step
 const WALK_SPEED = 2 // km/h off-trail on flat open ground
 const VILLAGE_RADIUS = 120
+export const HURT = 25 // health below this: slower on the map, no running in 3D
 const WADE_DEPTH = 1.2 // deeper streams (and all rivers) have to be swum: on foot, in the 3D scene
 const ws = createWaterSample()
 
@@ -44,6 +45,8 @@ export interface RunState {
   day: number // 1-based
   hour: number // 0..24, fractional
   energy: number // 0..100
+  /** 0..100: falls in the 3D scene hurt; below HURT you walk slower, at 0 you must rest before walking */
+  health: number
   x: number
   z: number
   /** Fog of war, see viewshed.ts. Mutated in place by the actions (the array is shared between states). */
@@ -89,6 +92,7 @@ export function newRun(v: Valley): RunState {
     day: 1,
     hour: 8,
     energy: 100,
+    health: 100,
     x: v.start.x,
     z: v.start.z,
     fog,
@@ -105,6 +109,7 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
   if (s.status !== 'playing') return { state: s, stop: { kind: 'refused', message: 'The journey is over.' } }
   if (isNight(s.hour)) return withStop(s, { kind: 'refused', message: 'It is too dark to walk. Rest until morning.' })
   if (s.energy < 5) return withStop(s, { kind: 'refused', message: 'You are too tired to walk. Rest first.' })
+  if (s.health <= 0) return withStop(s, { kind: 'refused', message: 'You are too badly hurt to walk. Rest first.' })
 
   const rad = (bearing * Math.PI) / 180
   const dx = Math.sin(rad)
@@ -175,7 +180,7 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
     // slower uphill, a bit slower steeply downhill, slower on rough slopes
     const slowdown = grade > 0 ? 1 + grade * 6 : 1 + -grade * 1.5
     const rough = 1 + slopeAt(v.map, nx, nz) * 0.8
-    const dt = STEP / 1000 / (WALK_SPEED / (slowdown * rough))
+    const dt = STEP / 1000 / ((WALK_SPEED * (s.health < HURT ? 0.7 : 1)) / (slowdown * rough))
     x = nx
     z = nz
     hour += dt
@@ -277,8 +282,8 @@ export function climb(v: Valley, s: RunState): { state: RunState; stop: Stop } {
 export function rest(_v: Valley, s: RunState): { state: RunState; stop: Stop } {
   if (s.status !== 'playing') return { state: s, stop: { kind: 'refused', message: 'The journey is over.' } }
   if (!isNight(s.hour)) {
-    const state = { ...s, hour: s.hour + 1, energy: Math.min(100, s.energy + 20) }
-    return withStop(state, { kind: 'rest', message: 'You rest for an hour. +20 energy.' })
+    const state = { ...s, hour: s.hour + 1, energy: Math.min(100, s.energy + 20), health: Math.min(100, s.health + 8) }
+    return withStop(state, { kind: 'rest', message: `You rest for an hour. +20 energy${s.health < 100 ? ', +8 health' : ''}.` })
   }
   const day = s.hour >= NIGHTFALL ? s.day + 1 : s.day
   if (day > DAYS_ALLOWED) {
@@ -287,6 +292,6 @@ export function rest(_v: Valley, s: RunState): { state: RunState; stop: Stop } {
       message: `Day ${day} dawns and nobody is looking for you here any more. You did not make it.`,
     })
   }
-  const state = { ...s, day, hour: DAY_START, energy: Math.min(100, s.energy + 60) }
-  return withStop(state, { kind: 'sleep', message: `You sleep under the stars. Day ${day}, 07:00. +60 energy.` })
+  const state = { ...s, day, hour: DAY_START, energy: Math.min(100, s.energy + 60), health: Math.min(100, s.health + 30) }
+  return withStop(state, { kind: 'sleep', message: `You sleep under the stars. Day ${day}, 07:00. +60 energy${s.health < 100 ? ', +30 health' : ''}.` })
 }

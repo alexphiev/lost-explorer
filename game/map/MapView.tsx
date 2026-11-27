@@ -1,7 +1,7 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useJourney } from '@/game/state/journey'
-import { DAYS_ALLOWED, bearingTo, compassName, formatHour } from '@/game/core/travel'
+import { DAYS_ALLOWED, HURT, bearingTo, compassName, formatHour } from '@/game/core/travel'
 import { MAP_SIZE } from '@/game/core/valley'
 import { FOG_UNSEEN } from '@/game/core/viewshed'
 import { randomSeed } from '@/game/core/rng'
@@ -164,6 +164,12 @@ export default function MapView() {
           <div className="text-sm">Energy {Math.round(run.energy)}</div>
           <div className="h-3 w-full rounded bg-amber-200">
             <div className="h-3 rounded bg-green-700" style={{ width: `${Math.max(0, Math.min(100, run.energy))}%` }} />
+          </div>
+        </div>
+        <div>
+          <div className="text-sm">Health {Math.round(run.health)}{run.health < HURT ? (run.health <= 0 ? ' · too hurt to walk: rest' : ' · hurt: walking slower') : ''}</div>
+          <div className="h-3 w-full rounded bg-amber-200">
+            <div className="h-3 rounded bg-red-700" style={{ width: `${Math.max(0, Math.min(100, run.health))}%` }} />
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
