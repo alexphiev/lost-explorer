@@ -546,7 +546,7 @@ export default function Player({
       if (sp > 0.1) g.yaw = damp(g.yaw, g.yaw + wrapAngle(Math.atan2(g.swimVx, g.swimVz) - g.yaw), 4, dt)
       // the current carries you along (strokes are relative to the water)
       setBody(g.swimVx + flowX, vy, g.swimVz + flowZ, g.yaw)
-      run.coldLoss += dt * (COLD_SWIM + COLD_CURRENT * clamp(flowSpeed - 0.6, 0, 1))
+      run.coldLoss += rawDt * (COLD_SWIM + COLD_CURRENT * clamp(flowSpeed - 0.6, 0, 1))
       chilling = true
       g.coldTime += dt
       if (strength <= 0) prompt = 'Too cold! Get out of the water'
@@ -601,7 +601,7 @@ export default function Player({
       g.slopeF = damp(g.slopeF, slopeSpeedFactor(grade) * (1 - 0.5 * wade), 4, dt)
       if (wade > 0.15) {
         // cold feet, and the current pushes the deeper you stand in it
-        run.coldLoss += dt * COLD_WADE * wade
+        run.coldLoss += rawDt * COLD_WADE * wade
         chilling = true
         if (flowSpeed > 0.05) {
           const push = wade * wade * 2.5 * dt * rb!.mass()
