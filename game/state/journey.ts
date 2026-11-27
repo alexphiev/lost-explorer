@@ -4,6 +4,7 @@ import { climb, explore, newRun, rest, walk, type RunState } from '@/game/core/t
 import { snapToTileGrid } from '@/game/core/terrain'
 import { generateValley, type Point, type Valley } from '@/game/core/valley'
 import type { Best, SavedRun } from './save'
+import { levelById } from '@/game/core/levels'
 
 /** Real seconds played in the current run (ticked by the game shell, not by the frame loop). */
 export const useClock = create<{ seconds: number }>(() => ({ seconds: 0 }))
@@ -48,12 +49,12 @@ export const useJourney = create<Journey>((set, get) => ({
   sceneCenter: null,
   result: null,
   start: (seed, level = get().level) => {
-    const valley = get().valley?.seed === seed ? get().valley! : generateValley(seed)
+    const valley = get().valley?.seed === seed ? get().valley! : generateValley(seed, level !== null ? levelById(level)?.spec : undefined)
     useClock.setState({ seconds: 0 })
     set({ level, valley, run: newRun(valley), bearing: null, layer: 'map', sceneCenter: null, result: null })
   },
   resume: (saved) => {
-    const valley = get().valley?.seed === saved.seed ? get().valley! : generateValley(saved.seed)
+    const valley = get().valley?.seed === saved.seed ? get().valley! : generateValley(saved.seed, saved.level !== null ? levelById(saved.level)?.spec : undefined)
     useClock.setState({ seconds: saved.seconds })
     set({ level: saved.level, valley, run: saved.run, bearing: saved.bearing, layer: 'map', sceneCenter: null, result: null })
     if (saved.layer === 'scene') get().enterScene()

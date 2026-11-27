@@ -41,7 +41,7 @@ export default function MainMenu() {
         <Compass />
         <h1 className="mt-4 text-6xl font-bold tracking-[0.15em] drop-shadow-[0_3px_0_rgba(0,0,0,0.5)]">BEARING</h1>
         <p className="mt-2 max-w-md text-center italic text-amber-100/80">
-          Lost in the wild with a map that fills in as you climb. Pick a bearing, cross rivers and ridges, and reach the village before your days run out.
+          Lost in the wild with a map that fills in as you climb. Read the clues, pick a bearing, cross rivers and ridges, and find your way back to people before your days run out.
         </p>
 
         <a href={`/play?level=${current.id}`} className="btn-game green mt-8 !px-10 !py-4 text-2xl">

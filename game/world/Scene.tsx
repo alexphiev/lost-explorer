@@ -8,7 +8,7 @@ import { useSettings } from '@/game/state/settings'
 import { runStore } from '@/game/state/run'
 import { SCENE_TIME_SCALE, useJourney } from '@/game/state/journey'
 import { heightAt, sampleTile } from '@/game/core/terrain'
-import { placeDecor, placeVegetation, placeVillage } from '@/game/core/placement'
+import { anchorIn, placeDecor, placeVegetation, placeVillage } from '@/game/core/placement'
 import { DAYS_ALLOWED, formatHour, HURT } from '@/game/core/travel'
 import type { Point, Valley } from '@/game/core/valley'
 import type { WaterSample } from '@/game/core/rivers'
@@ -20,6 +20,7 @@ import Water from './Water'
 import Daylight, { DaylightFog, SUN_DIR } from './Daylight'
 import PostFX from './PostFX'
 import Village from './Village'
+import { ClueProp, GoalProp } from './Landmarks'
 import Decor, { LOG_HALF, LOG_R } from './Decor'
 
 
@@ -47,7 +48,12 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
       terrain,
       vegetation: placeVegetation(terrain, valley.field, valley.seed),
       decor: placeDecor(terrain, valley.field, valley.seed),
-      houses: placeVillage(terrain, valley.field, valley.seed, valley.village.x, valley.village.z),
+      houses: valley.goal.kind === 'village' ? placeVillage(terrain, valley.field, valley.seed, valley.village.x, valley.village.z) : [],
+      goal: valley.goal.kind === 'village' ? null : anchorIn(terrain, valley.goal.x, valley.goal.z, valley.goal.rotation),
+      clues: valley.clues.flatMap((c) => {
+        const at = anchorIn(terrain, c.x, c.z, Math.PI / 2 - (c.bearing * Math.PI) / 180, 5)
+        return at ? [{ kind: c.kind, at }] : []
+      }),
       spawn: [0, heightAt(terrain, 0, 0) + 1.5, 0] as [number, number, number],
     }
   }, [valley, center])
@@ -71,10 +77,19 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
   }, [world])
 
   // game clock shown in the HUD (not in the frame loop)
+  // walking up to the goal ends the level
   useEffect(() => {
-    const id = setInterval(() => setElapsed((performance.now() - enteredAt) / 1000), 1000)
+    const gx = valley.village.x - world.terrain.centerX
+    const gz = valley.village.z - world.terrain.centerZ
+    const reach = valley.goal.kind === 'village' ? 60 : 12
+    const id = setInterval(() => {
+      const secs = (performance.now() - enteredAt) / 1000
+      setElapsed(secs)
+      const p = runStore.getState().playerPosition
+      if (Math.hypot(p.x - gx, p.z - gz) < reach) leaveScene(p.x, p.z, secs, false)
+    }, 1000)
     return () => clearInterval(id)
-  }, [enteredAt])
+  }, [enteredAt, valley, world, leaveScene])
 
   // M = back to the map (letter by key, not code, so AZERTY works). E (climb / look around) lives in Player.
   useEffect(() => {
@@ -186,6 +201,10 @@ export default function Scene({ valley, center }: { valley: Valley; center: Poin
             <Vegetation data={world.vegetation} />
             <Decor data={world.decor} />
             <Village houses={world.houses} />
+            {world.goal && valley.goal.kind !== 'village' && <GoalProp kind={valley.goal.kind} at={world.goal} />}
+            {world.clues.map((c, i) => (
+              <ClueProp key={i} kind={c.kind} at={c.at} />
+            ))}
             <Water field={valley.field} tile={t} />
             <Player
               spawn={world.spawn}

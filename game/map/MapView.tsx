@@ -4,7 +4,8 @@ import { useClock, useJourney } from '@/game/state/journey'
 import { DAYS_ALLOWED, HURT, bearingTo, compassName, formatHour } from '@/game/core/travel'
 import { levelById, LEVELS } from '@/game/core/levels'
 import { MAP_SIZE } from '@/game/core/valley'
-import { FOG_UNSEEN, fogAt } from '@/game/core/viewshed'
+import { FOG_NEAR, FOG_UNSEEN, fogAt } from '@/game/core/viewshed'
+import { GOALS } from '@/game/core/goals'
 import { randomSeed } from '@/game/core/rng'
 import { formatDuration } from '@/game/state/save'
 import { renderMap } from './renderMap'
@@ -103,8 +104,8 @@ export default function MapView() {
     const sx = (x: number) => (x + MAP_SIZE / 2) * k
     const sz = (z: number) => (z + MAP_SIZE / 2) * k
     const found: Hit[] = []
-    const pin = (kind: MarkerKind, x: number, z: number, label: string, sub?: string) => {
-      drawMarker(ctx, kind, sx(x), sz(z))
+    const pin = (kind: MarkerKind, x: number, z: number, label: string, sub?: string, dir?: number) => {
+      drawMarker(ctx, kind, sx(x), sz(z), dir)
       found.push({ x: sx(x), y: sz(z), kind, label, sub })
     }
 
@@ -127,10 +128,16 @@ export default function MapView() {
     // what you found along the way
     for (const m of run.marks) {
       if (m.kind === 'village') continue
-      pin(m.kind, m.x, m.z, m.label, `Day ${m.day}, ${formatHour(m.hour % 24)}`)
+      const when = `Day ${m.day}, ${formatHour(m.hour % 24)}`
+      if (m.kind === 'clue' && m.bearing !== undefined) pin('clue', m.x, m.z, m.label, `Points ${compassName(m.bearing)} · ${when}`, m.bearing)
+      else pin(m.kind, m.x, m.z, m.label, when)
     }
-    // village
-    if (fogAt(valley.map, run.fog, valley.village.x, valley.village.z) !== FOG_UNSEEN) pin('village', valley.village.x, valley.village.z, 'Village', 'Reach it to finish the level')
+    // the goal: villages show from afar, small places only once seen up close (or reached)
+    const g = valley.goal
+    const gf = fogAt(valley.map, run.fog, g.x, g.z)
+    if (run.marks.some((m) => m.kind === 'village') || (GOALS[g.kind].visibleFar ? gf !== FOG_UNSEEN : gf === FOG_NEAR)) {
+      pin(g.kind, g.x, g.z, GOALS[g.kind].name, 'Reach it to finish the level')
+    }
 
     const px = sx(run.x)
     const pz = sz(run.z)
@@ -269,7 +276,15 @@ export default function MapView() {
   const recent = run.log.slice(-7).reverse()
   const seenKinds = new Set<MarkerKind>(['start', ...run.marks.map((m) => m.kind)])
   for (const l of valley.landmarks) if (fogAt(valley.map, run.fog, l.x, l.z) !== FOG_UNSEEN) seenKinds.add(l.kind)
-  const legend = (Object.keys(MARKER_NAME) as MarkerKind[]).filter((kd) => seenKinds.has(kd))
+  const goal = GOALS[valley.goal.kind]
+  const goalSeen = run.marks.some((m) => m.kind === 'village') || (() => {
+    const f = fogAt(valley.map, run.fog, valley.goal.x, valley.goal.z)
+    return goal.visibleFar ? f !== FOG_UNSEEN : f === FOG_NEAR
+  })()
+  if (goalSeen) seenKinds.add(valley.goal.kind)
+  const legend = (Object.keys(MARKER_NAME) as MarkerKind[]).filter((kd) => seenKinds.has(kd) && kd !== 'village')
+  if (goalSeen && valley.goal.kind === 'village') legend.push('village')
+  const cluesFound = run.found?.length ?? 0
   const record = result && (!result.previous || result.time.seconds < result.previous.seconds)
 
   return (
@@ -347,6 +362,22 @@ export default function MapView() {
             />
           </div>
 
+          <div className="flex items-center gap-3 rounded-md border border-[#3b2a1a]/25 bg-[#3b2a1a]/5 p-2">
+            <MarkerIcon kind={valley.goal.kind} />
+            <div className="flex-1 text-sm">
+              <div className="text-xs font-bold uppercase tracking-wider opacity-60">Looking for</div>
+              <div className="font-bold">{goalSeen ? goal.name : `${goal.name}?`}</div>
+            </div>
+            {valley.clues.length > 0 && (
+              <div className="text-right text-sm" title="Clues point to the next clue; the last one to the goal">
+                <div className="text-xs font-bold uppercase tracking-wider opacity-60">Clues</div>
+                <div className="font-bold tabular-nums">
+                  {cluesFound} / {valley.clues.length}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="rounded-md border border-[#3b2a1a]/25 bg-[#3b2a1a]/5 p-2 text-center text-sm">
             {bearing === null ? (
               <span className="italic opacity-70">Click the map to choose a bearing</span>
@@ -383,7 +414,7 @@ export default function MapView() {
             </ul>
           </div>
           <p className="text-xs opacity-60">
-            {km.toFixed(1)} km walked · {run.marks.length} places found · climb trees and hills to reveal the map; in 3D, swim rivers and find a way around cliffs.
+            {km.toFixed(1)} km walked · {run.marks.length} places found · clues point to the next clue, the last one to the goal. Climb to spot them from afar.
           </p>
         </aside>
       </div>
@@ -394,7 +425,7 @@ export default function MapView() {
             <div className="mb-1 text-5xl">{run.status === 'won' ? '🏡' : '🌲'}</div>
             <h2 className="mb-1 text-3xl font-bold">{run.status === 'won' ? (lv ? 'Level complete!' : 'You made it!') : 'Lost for good'}</h2>
             <p className="mb-4 italic opacity-80">
-              {run.status === 'won' ? 'Rooftops, a barking dog, a road. You reached the village.' : 'Nobody is looking for you here any more.'}
+              {run.status === 'won' ? goal.found : 'Nobody is looking for you here any more.'}
             </p>
             <div className="mb-4 grid grid-cols-3 gap-2 text-sm">
               <div className="rounded bg-[#3b2a1a]/10 p-2">

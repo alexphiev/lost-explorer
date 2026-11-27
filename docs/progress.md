@@ -89,6 +89,9 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] Local save in localStorage (`game/state/save.ts`): unlocked levels, best times, run in progress per valley (fog packed 2 bits/cell), saved on every action, every 5 s and on page hide; reopening resumes on the map (or back in the 3D scene at the same tile)
 - [x] Map: discovered points of interest (camps, viewpoints, berries, smoke, cliffs, scrub, deep water, village) + seen summits and lakes, hand-drawn symbols, hover tooltips, legend, scale bar; parchment/journal layout with game buttons and key hints; end screen with time, best time, next level
 - [x] Main menu: title, Play/Continue, level cards (locked/done/best time/continue/restart)
+- [x] Each level ends at a sign of civilisation (`game/core/goals.ts`): village, forester's cabin (in the woods, among thorns), boat (on a river bank), shepherds' cave (at a cliff foot), fishing hut (lake shore). Placed on a 3–6 km ring within 75° of where the land drains, reachable on foot; villages show from afar and smoke, the others only once seen up close
+- [x] Clues (`LevelSpec.clues`): laid along a walkable route start → goal (20–78 % of the way, nudged off it), each points to the next, the last to the goal. Found when seen up close (cairns: seen at all, from a viewpoint): the walk stops, journal line with the direction, pinned on the map with an arrow. 3D props (cairn, signpost, blazed tree, fire ring, marked finds) and goal props; walking up to the goal in 3D ends the level
+- [x] Level design: 1 village 3.5–4.3 km, 3 clues · 2 boat 3.8–4.8 km, 3 · 3 cave 4–5 km, 2 cairns + piton · 4 cabin 4.3–5.3 km, 2 · 5 hut 4.3–5.7 km, 2 · 6 village 5.2–6 km, 1
 - [ ] Accounts + database (#29), per-level leaderboard (#30)
 
 ## Current task

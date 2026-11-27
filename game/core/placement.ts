@@ -190,3 +190,18 @@ export function placeDecor(t: Terrain, field: HeightField, seed: string): Decor 
     branches: scatter(t, w, seed, 'branches', 700, (s) => (s.slope > 0.5 ? 0 : 0.3 + 0.5 * s.moisture), 0.5, 1.3, 1.5, R),
   }
 }
+
+export interface Anchor {
+  x: number
+  y: number
+  z: number
+  rotation: number
+}
+
+/** A world spot as tile-local coordinates on the ground, or null outside the tile. */
+export function anchorIn(t: Terrain, x: number, z: number, rotation: number, margin = 30): Anchor | null {
+  const lx = x - t.centerX
+  const lz = z - t.centerZ
+  if (Math.abs(lx) > t.size / 2 - margin || Math.abs(lz) > t.size / 2 - margin) return null
+  return { x: lx, y: heightAt(t, lx, lz), z: lz, rotation }
+}

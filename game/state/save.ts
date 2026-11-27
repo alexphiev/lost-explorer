@@ -79,7 +79,7 @@ export function loadRun(seed: string, fogLength: number): SavedRun | null {
   const r = read<SavedRun & { run: RunState & { fog: string } }>(runKey(seed))
   if (!r || r.run.status !== 'playing') return null
   try {
-    return { ...r, run: { ...r.run, marks: r.run.marks ?? [], fog: unpackFog(r.run.fog, fogLength) } }
+    return { ...r, run: { ...r.run, marks: r.run.marks ?? [], found: r.run.found ?? [], fog: unpackFog(r.run.fog, fogLength) } }
   } catch {
     return null
   }
