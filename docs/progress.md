@@ -114,12 +114,12 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] 1 (#35) One continuous 3 km 3D valley, no map travel: `sampleWorld` (768 segs, ~2 s to sample), terrain drawn in 500 m chunks (full detail within 750 m, 1/4 res + skirts beyond), one heightfield collider; trees/rocks/sparse 9 m scrub layer for the whole world, grass/flowers/decor/dense 3.5 m scrub streamed within 200–250 m (rebuilt after 60 m); map = same 3 km window (11.7 m cells); levels start on foot, map is open/close only (M/X/Esc), no walk/climb/rest on the map; goal distances 600–1250 m; main valley 0.5–1 km from the start; edge prompt
 - [x] 2 (#36) Time 1 min = 2.4 h (`TIME_SCALE` 144), continuous days (hour rolls over into the next day), lost at 72 h (`LIMIT_HOURS`) or at 0 health (`checkEnd`); effort spends energy per game hour (idle 1.5, walk 4, run 10, swim 10, climb 14: `runStore.fatigue`), night cold 4/h away from a camp, 5 health/h with no energy, exhausted = 0.6× speed; HUD day/hour/☾☀/hours left/energy/health; time frozen while the map is open
 - [x] 3 (#37) Living map: every 0.5 s on foot `observe` clears the fog by line of sight from the eye (400–700 m by day + up to 300 m when high up, e.g. on a tree; 150 m at night), draws the trail every 20 m and finds clues on the spot (toast "Clue · pinned on your map" + journal); E on a tree/rock top still gives the big viewpoint reveal; the map is a paused overlay (M)
-- [ ] 4 (#38) Camp
+- [x] 4 (#38) Camp: C pitches a camp on firm, dry, not-too-steep ground (`game/core/camp.ts`): quality from shelter (trees/big rock within 8 m), fire (≥ 2 trees within 25 m), exposure (6 m above the land 60 m around), damp (water within 20 m / soaked ground), slope; tent + flickering fire; within 12 m: R rest 1 h, L sleep until 07:00 (from 19:00), C pack up; walking 30 m away packs up; recovery × (0.3 + 0.7 q), a bad spot (q < 0.45) costs health overnight; the fire cancels the night cold (no fire: half); falls ×3 likelier in the dark
 - [ ] 5 (#39) Night clues of light
 - [ ] 6 (#40) Levels at the new scale
 
 ## Current task
-Redesign task 4 (#38).
+Redesign task 5 (#39) — paused (credits). Tasks 1–4 are on the branch, not yet in a PR.
 
 ## Next action
 Continue the redesign tasks in order; one PR when the new loop is playable.

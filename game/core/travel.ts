@@ -107,6 +107,8 @@ export interface RunState {
   found: number[]
   /** passed close to a small goal (cabin, boat…): it shows on the map */
   goalSeen?: boolean
+  /** the camp you set up (world position), until you pack it up */
+  camp?: Camp | null
 }
 
 const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west']
@@ -126,7 +128,47 @@ export function formatHour(hour: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
-const isNight = (hour: number) => hour >= NIGHTFALL || hour < DAY_START
+export const isNight = (hour: number) => hour >= NIGHTFALL || hour < DAY_START
+
+export interface Camp {
+  x: number
+  z: number
+  /** 0..1 */
+  quality: number
+  fire: boolean
+}
+
+/** Pitch a camp at world (x, z) and pin it. */
+export function makeCamp(s: RunState, camp: Camp, verdict: string): RunState {
+  return { ...s, camp, marks: addMark(s, 'camp', camp.x, camp.z, `Camp, day ${s.day}`), log: [...s.log, { kind: 'rest', message: `You make camp. ${verdict}.` }] }
+}
+
+/**
+ * Rest at the camp: one hour, or sleep until 07:00. Recovery scales with the camp's quality;
+ * a bad camp makes a cold night that can hurt.
+ */
+export function campRest(s: RunState, sleep: boolean): RunState {
+  const c = s.camp
+  if (!c || s.status !== 'playing') return s
+  const hours = sleep ? (s.hour >= DAY_START ? 24 - s.hour + DAY_START : DAY_START - s.hour) : 1
+  const k = 0.3 + 0.7 * c.quality
+  let energy = Math.min(100, s.energy + (sleep ? 9 : 15) * hours * k)
+  let health = Math.min(100, s.health + (sleep ? 4 : 3) * hours * k)
+  let message: string
+  if (sleep) {
+    const cold = Math.max(0, 0.45 - c.quality) * 40 // a freezing, sleepless night on a bad spot
+    health = Math.max(0, health - cold)
+    energy = Math.max(0, energy - cold * 0.5)
+    message = cold > 5 ? 'A freezing night: you barely sleep, and wake up stiff and cold.' : c.quality > 0.7 ? 'You sleep well by the fire and wake up rested.' : 'You sleep, on and off, until dawn.'
+  } else message = `You rest for an hour. +${Math.round(15 * k)} energy.`
+  let hour = s.hour + hours
+  let day = s.day
+  while (hour >= 24) {
+    hour -= 24
+    day++
+  }
+  return checkEnd({ ...s, hour, day, energy, health, log: [...s.log, { kind: sleep ? 'sleep' : 'rest', message }] })
+}
 
 function withStop(s: RunState, stop: Stop): { state: RunState; stop: Stop } {
   return { state: { ...s, log: [...s.log, stop] }, stop }

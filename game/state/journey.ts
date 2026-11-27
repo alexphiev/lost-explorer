@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { runStore } from './run'
-import { checkEnd, climb, explore, newRun, observe, TIME_SCALE, type RunState } from '@/game/core/travel'
+import { campRest, checkEnd, climb, explore, makeCamp, newRun, observe, TIME_SCALE, type RunState } from '@/game/core/travel'
 import { generateValley, type Point, type Valley } from '@/game/core/valley'
 import type { Best, SavedRun } from './save'
 import { levelById } from '@/game/core/levels'
@@ -33,6 +33,10 @@ interface Journey {
   setBearing: (b: number) => void
   climb: () => void
   enterScene: () => void
+  /** At the camp, on foot: settle what the scene spent so far, then rest an hour or sleep until dawn. */
+  campRest: (localX: number, localZ: number, seconds: number, sleep: boolean) => void
+  /** Pitch (spot given) or pack up (null) the camp at tile-local (x, z). */
+  setCamp: (spot: { x: number; z: number; quality: number; fire: boolean; verdict: string } | null) => void
   /** On foot: what the player sees from tile-local (x, z) (fog, trail, clues). Returns new journal lines, if any. */
   observe: (localX: number, localZ: number, eye: number, night: boolean, hour: number) => string[]
   /** back to the map from the 3D scene; `local*` = player position in the tile, `seconds` = real time spent */
@@ -94,6 +98,23 @@ export const useJourney = create<Journey>((set, get) => ({
     const o = observe(valley, run, sceneCenter.x + localX, sceneCenter.z + localZ, eye, night, hour)
     if (o.state !== run) set({ run: o.state })
     return o.lines
+  },
+  campRest: (localX, localZ, seconds, sleep) => {
+    const { valley, run, sceneCenter } = get()
+    if (!valley || !run || !sceneCenter) return
+    const settled = settleScene(valley, run, sceneCenter, localX, localZ, seconds)
+    runStore.getState().coldLoss = 0
+    runStore.getState().injury = 0
+    runStore.getState().fatigue = 0
+    const next = settled.status === 'playing' ? campRest(settled, sleep) : settled
+    set({ run: next, layer: next.status === 'playing' ? 'scene' : 'map' })
+  },
+  setCamp: (spot) => {
+    const { run, sceneCenter } = get()
+    if (!run || !sceneCenter) return
+    if (!spot) return set({ run: { ...run, camp: null } })
+    const camp = { x: sceneCenter.x + spot.x, z: sceneCenter.z + spot.z, quality: spot.quality, fire: spot.fire }
+    set({ run: makeCamp(run, camp, spot.verdict) })
   },
   enterScene: () => {
     const { run } = get()

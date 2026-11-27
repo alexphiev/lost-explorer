@@ -621,9 +621,10 @@ export default function Player({
         const steepRun = running && grade < STEEP_RUN_GRADE
         if (steepRun) g.steepTime += dt
         else g.steepTime = Math.max(0, g.steepTime - dt * 2)
-        if (steepRun && g.steepTime > 0.35 && Math.random() < dt * 3) {
+        const dark = 1 + 2 * run.night // you see the ground less well at night
+        if (steepRun && g.steepTime > 0.35 && Math.random() < dt * 3 * dark) {
           startFall(0, 4 + Math.random() * 4, fwd.x * speedNow * 0.5, fwd.z * speedNow * 0.5, 'Too steep to run: your legs run away from you and you tumble')
-        } else if (running && water - feet > 0.05 && water - feet < 0.9 && Math.random() < dt * WET_SLIP_RATE) {
+        } else if (running && water - feet > 0.05 && water - feet < 0.9 && Math.random() < dt * WET_SLIP_RATE * dark) {
           startFall(0, 3 + Math.random() * 3, fwd.x * speedNow * 0.3, fwd.z * speedNow * 0.3, 'You slip on a wet stone')
         }
       }

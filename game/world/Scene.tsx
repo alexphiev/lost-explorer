@@ -14,6 +14,8 @@ import { DAY_START, DAYS_ALLOWED, formatHour, HURT, LIMIT_HOURS, NIGHTFALL, TIME
 
 /** Energy lost per game hour to the night cold away from a camp's fire, and health lost per game hour with no energy left. */
 const NIGHT_COLD = 4
+/** metres: within this of your camp you are "at camp" (rest, sleep, the fire's warmth) */
+const CAMP_NEAR = 12
 const STARVING = 5
 import type { Point, Valley } from '@/game/core/valley'
 import type { WaterSample } from '@/game/core/rivers'
@@ -26,7 +28,8 @@ import SoundScape from './SoundScape'
 import Daylight, { DaylightFog, SUN_DIR } from './Daylight'
 import PostFX from './PostFX'
 import Village from './Village'
-import { ClueProp, GoalProp } from './Landmarks'
+import { CampProp, ClueProp, GoalProp } from './Landmarks'
+import { campSpot, campVerdict } from '@/game/core/camp'
 import Decor, { LOG_HALF, LOG_R } from './Decor'
 
 
@@ -189,7 +192,11 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
       // survival, once a second (rates per game hour): the night is cold; an empty energy bar eats into health
       const gameH = (dt * TIME_SCALE) / 3600
       const h = (visit.hour + (secs * TIME_SCALE) / 3600) % 24
-      if (h >= NIGHTFALL || h < DAY_START) r.coldLoss += NIGHT_COLD * gameH
+      const dark = h >= NIGHTFALL || h < DAY_START
+      r.night = dark ? 1 : 0
+      const c = useJourney.getState().run?.camp
+      const atCamp = c ? Math.hypot(c.x - p.x, c.z - p.z) < CAMP_NEAR : false
+      if (dark) r.coldLoss += NIGHT_COLD * gameH * (atCamp ? (c!.fire ? 0 : 0.5) : 1)
       if (visit.energy - r.coldLoss - r.fatigue <= 0) r.injury += STARVING * gameH
       // the end: collapse, or out of time
       const used = (visit.day - 1) * 24 + visit.hour - 8 + (secs * TIME_SCALE) / 3600
@@ -204,6 +211,12 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
   // what you see: the map fills in as you go (every 0.5 s, not in the frame loop), clues are found on the spot
   const observe = useJourney((s) => s.observe)
   const [toast, setToast] = useState<string | null>(null)
+  // messages fade after a few seconds
+  useEffect(() => {
+    if (!toast) return
+    const id = window.setTimeout(() => setToast(null), 8000)
+    return () => window.clearTimeout(id)
+  }, [toast])
   useEffect(() => {
     if (!active) return
     let toastUntil = 0
@@ -213,7 +226,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
       const h = (visit.hour + ((performance.now() - visit.enteredAt) / 1000) * TIME_SCALE / 3600) % 24
       const lines = observe(p.x, p.z, 1.7 + above, h >= NIGHTFALL || h < DAY_START, h)
       if (lines.length) {
-        setToast(lines.join(' '))
+        setToast(`Clue, pinned on your map: ${lines.join(' ')}`)
         toastUntil = performance.now() + 9000
       } else if (toastUntil && performance.now() > toastUntil) {
         toastUntil = 0
@@ -222,6 +235,63 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
     }, 500)
     return () => window.clearInterval(id)
   }, [active, observe, world, visit])
+
+  // the camp: C pitch / pack up, R rest an hour, L sleep until dawn (time skips; what the scene spent is settled first)
+  const camp = run?.camp ?? null
+  const setCamp = useJourney((s) => s.setCamp)
+  const campRest = useJourney((s) => s.campRest)
+  const [nearCamp, setNearCamp] = useState(false)
+  const restartVisit = useCallback(() => {
+    const r = useJourney.getState().run
+    setVisit({ enteredAt: performance.now(), energy: r?.energy ?? 100, health: r?.health ?? 100, hour: r?.hour ?? 12, day: r?.day ?? 1 })
+    setElapsed(0)
+  }, [])
+  useEffect(() => {
+    if (!active) return
+    const id = window.setInterval(() => {
+      const c = useJourney.getState().run?.camp
+      const p = runStore.getState().playerPosition
+      const near = !!c && Math.hypot(c.x - p.x, c.z - p.z) < CAMP_NEAR
+      setNearCamp(near)
+      // walked away: the camp is packed up
+      if (c && Math.hypot(c.x - p.x, c.z - p.z) > CAMP_NEAR * 2.5) setCamp(null)
+    }, 500)
+    return () => window.clearInterval(id)
+  }, [active, setCamp])
+  useEffect(() => {
+    if (!active) return
+    const onKey = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase()
+      if (k !== 'c' && k !== 'r' && k !== 'l') return
+      const p = runStore.getState().playerPosition
+      const a = runStore.getState().audio
+      const c = useJourney.getState().run?.camp
+      const near = !!c && Math.hypot(c.x - p.x, c.z - p.z) < CAMP_NEAR
+      const secs = (performance.now() - enteredAt) / 1000
+      const h = (visit.hour + (secs * TIME_SCALE) / 3600) % 24
+      if (k === 'c') {
+        if (c) {
+          setCamp(null)
+          setToast('You pack up your camp.')
+          return
+        }
+        if (a.mode !== 0 || !a.grounded) return setToast('Find firm ground first.')
+        const v = world.vegetation
+        const spot = campSpot(world.terrain, valley.field, [v.conifers, v.broadleaves], v.rocks, p.x, p.z)
+        if (!spot.ok) return setToast(spot.refusal ?? 'Not here.')
+        const verdict = campVerdict(spot.quality)
+        setCamp({ x: p.x, z: p.z, quality: spot.quality, fire: spot.fire, verdict: `${verdict} (${spot.notes.join(', ')})` })
+        setToast(`${verdict}: ${spot.notes.join(', ')}.`)
+        return
+      }
+      if (!near) return
+      if (k === 'l' && !(h >= 19 || h < DAY_START)) return setToast('Too early to sleep: wait for the evening (19:00).')
+      campRest(p.x, p.z, secs, k === 'l')
+      restartVisit()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active, enteredAt, visit, world, valley, setCamp, campRest, restartVisit])
 
   // M = back to the map (letter by key, not code, so AZERTY works). E (climb / look around) lives in Player.
   useEffect(() => {
@@ -346,6 +416,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
             <Decor data={decor} />
             <Village houses={world.houses} />
             {world.goal && valley.goal.kind !== 'village' && <GoalProp kind={valley.goal.kind} at={world.goal} />}
+            {camp && <CampProp at={{ x: camp.x - world.terrain.centerX, y: heightAt(world.terrain, camp.x - world.terrain.centerX, camp.z - world.terrain.centerZ), z: camp.z - world.terrain.centerZ, rotation: 0 }} fire={camp.fire} />}
             {world.clues.map((c, i) => (
               <ClueProp key={i} kind={c.kind} at={c.at} />
             ))}
@@ -370,9 +441,13 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
         <PostFX />
       </Canvas>
       <Compass strip={compass} bearing={bearing} />
+      {nearCamp && camp && (
+        <div className="pointer-events-none absolute bottom-28 left-1/2 -translate-x-1/2 rounded bg-black/55 px-3 py-1.5 text-center font-mono text-xs text-white">
+          ⛺ Camp{camp.fire ? ' · 🔥' : ''} · <b>R</b> rest 1 h · <b>L</b> sleep until dawn (from 19:00) · <b>C</b> pack up
+        </div>
+      )}
       {toast && (
         <div className="pointer-events-none absolute left-1/2 top-24 max-w-lg -translate-x-1/2 rounded-md border border-amber-200/40 bg-[#3b2a1a]/85 px-4 py-2 text-center font-serif text-sm text-amber-50 shadow-lg">
-          <div className="text-xs uppercase tracking-[0.2em] text-amber-300">Clue · pinned on your map</div>
           {toast}
         </div>
       )}
@@ -392,7 +467,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
           </div>
         )}
         <div className="text-xs text-white/70">ZQSD/WASD/arrows · Shift run · Space jump · drag to look</div>
-        <div className="text-xs text-white/90">Walk into a steep slope or a rock to climb · E climb a tree · M back to the map</div>
+        <div className="text-xs text-white/90">Walk into a steep slope or a rock to climb · E climb a tree · C make camp · M map</div>
         <button
           className="pointer-events-auto mt-1 rounded bg-white/15 px-2 py-0.5 text-xs hover:bg-white/25"
           onClick={() => useSettings.getState().setMuted(!muted)}

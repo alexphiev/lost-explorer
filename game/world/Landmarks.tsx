@@ -1,4 +1,7 @@
 'use client'
+import { useRef } from 'react'
+import * as THREE from 'three/webgpu'
+import { useFrame } from '@react-three/fiber'
 import { CuboidCollider, CylinderCollider, RigidBody } from '@react-three/rapier'
 import type { Anchor } from '@/game/core/placement'
 import type { ClueKind, GoalKind } from '@/game/core/goals'
@@ -183,5 +186,41 @@ export function GoalProp({ kind, at }: { kind: Exclude<GoalKind, 'village'>; at:
         </>
       )}
     </RigidBody>
+  )
+}
+
+/** Your camp: a small tent and, when there is wood around, a fire whose light flickers. */
+export function CampProp({ at, fire }: { at: Anchor; fire: boolean }) {
+  const light = useRef<THREE.PointLight>(null)
+  const flame = useRef<THREE.Mesh>(null)
+  useFrame(({ clock }) => {
+    const t = clock.elapsedTime
+    const f = 0.85 + Math.sin(t * 9) * 0.08 + Math.sin(t * 23) * 0.05
+    if (light.current) light.current.intensity = 18 * f
+    if (flame.current) flame.current.scale.y = 0.8 + f * 0.4
+  })
+  return (
+    <group position={[at.x, at.y, at.z]} rotation={[0, at.rotation, 0]}>
+      <mesh position={[0, 0.75, -1.8]} rotation={[0, Math.PI / 4, 0]} castShadow>
+        <coneGeometry args={[1.5, 1.5, 4]} />
+        <meshLambertMaterial color="#c9833f" flatShading />
+      </mesh>
+      {fire && (
+        <group position={[0, 0, 0.8]}>
+          <Stones ring />
+          {[0, 1.2, 2.4].map((a) => (
+            <mesh key={a} position={[0, 0.12, 0]} rotation={[0, a, Math.PI / 2.4]}>
+              <cylinderGeometry args={[0.06, 0.06, 0.8, 5]} />
+              <meshLambertMaterial color="#4a3220" />
+            </mesh>
+          ))}
+          <mesh ref={flame} position={[0, 0.4, 0]}>
+            <coneGeometry args={[0.22, 0.6, 6]} />
+            <meshBasicMaterial color="#ffb347" />
+          </mesh>
+          <pointLight ref={light} position={[0, 0.8, 0]} color="#ff9a3c" intensity={18} distance={18} decay={2} />
+        </group>
+      )}
+    </group>
   )
 }
