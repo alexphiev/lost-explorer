@@ -35,13 +35,12 @@ const HAT = '#8a6a3c'
 const WALK_VEL = 2.4 // m/s, brisk hiking (a bit faster than real life: it's a game)
 const RUN_VEL = 6.2 // m/s, running (hold Shift)
 // running form (rad unless noted): arms swing from the shoulder, elbows ~85°, modest forward lean
-const RUN_ARM_GAIN = 1.3 // arm swing per rad of opposite-thigh swing (grows with stride, so with speed)
-const RUN_ARM_FWD = 0.6 // forward swing is shorter than the backward one
-const RUN_ARM_BWD = 1.15
-const RUN_ARM_BACK_BIAS = 0.1 // elbows carried slightly behind the torso
-const RUN_ARM_MIN = -0.45 // most forward upper arm (~26°): hands stop at the lower chest
-const RUN_ARM_MAX = 0.85 // most backward upper arm (~49°): hands pass by the hip
-const RUN_ELBOW = 1.45 // elbow bend (~83°), closes to ~80° in front, opens to ~92° behind
+// running arms: a big fore-aft pump from the shoulder, in step with the opposite leg (its swing only sets the
+// timing: it is saturated, so the arms always use their full range whatever the thigh amplitude)
+const RUN_ARM_SHARP = 3.5 // how quickly the swing saturates (tanh of the opposite thigh angle × this)
+const RUN_ARM_MID = 0.25 // swing centre: carried a little behind the torso
+const RUN_ARM_AMP = 0.85 // ± around it: −0.6 rad in front (hands to the chest) → +1.1 rad behind (hands past the hip)
+const RUN_ELBOW = 1.35 // elbow bend (~77°): closes a little in front, opens behind
 const RUN_LEAN = 0.14 // torso lean at running pace (~8°)
 const RUN_HEEL_KICK = 0.9 // extra knee flex in the swing phase
 const RUN_KNEE_DRIVE = 0.25 // extra thigh lift late in the swing
@@ -63,8 +62,8 @@ const UPPER_ARM = 0.32
 const FOREARM = 0.31
 const HAND_R = 0.05
 // climbing holds: limbs move in diagonal pairs (0 = left hand + right foot, 1 = right hand + left foot)
-const HOLD_STEP = 0.3 // a planted limb this far from its ideal hold (body moved on) lets its pair reach again
-const HOLD_LEAD = 0.15 // new holds land this far ahead in the direction of travel
+const HOLD_STEP = 0.45 // a planted limb this far from its ideal hold (body moved on) lets its pair reach again
+const HOLD_LEAD = 0.25 // new holds land this far ahead in the direction of travel
 const BODY_OFF_WALL = 0.4 // body origin (hips) distance from the surface while climbing
 const MANTLE_HANDS_END = 0.65 // mantle progress until which the hands stay on the edge
 // leg model (see <Leg>): knee → ankle pivot, and the boot's contact points in the ankle's frame
@@ -248,6 +247,7 @@ export default function Player({
   const root = useRef<THREE.Group>(null)
   const body = useRef<THREE.Group>(null)
   const torso = useRef<THREE.Group>(null)
+  const head = useRef<THREE.Group>(null)
   const scarfTail = useRef<THREE.Group>(null)
   const arms = [useRef<THREE.Group>(null), useRef<THREE.Group>(null)]
   const fores = [useRef<THREE.Group>(null), useRef<THREE.Group>(null)]
@@ -645,7 +645,7 @@ export default function Player({
         cU.set(ux * Math.cos(theta), Math.sin(theta), uz * Math.cos(theta))
         cL.set(uz, 0, -ux)
         g.climbPitch = 0.9 * (Math.PI / 2 - theta) // lie along the slope
-        const speed = (0.8 - 0.4 * climbSteep) * speedMul
+        const speed = (1.0 - 0.45 * climbSteep) * speedMul
         // up the slope along the surface, sideways along the contour (left = up × facing)
         const cosT = Math.cos(theta)
         const sinT = Math.sin(theta)
@@ -686,7 +686,7 @@ export default function Player({
         cU.set(0, 1, 0)
         cL.set(-cN.z, 0, cN.x)
         g.climbPitch = 0
-        const speed = (c.tree ? 0.7 : 0.5) * speedMul
+        const speed = (c.tree ? 0.85 : 0.65) * speedMul
         g.angle += (leftRight * speed * dt) / c.r
         g.climbY += upDown * speed * dt
         const feetNow = g.climbY - ROOT_TO_FEET
@@ -975,17 +975,17 @@ export default function Player({
         const walkX = t * 0.75 + 0.05
         const walkFore = -(0.2 + 0.35 * Math.max(0, -t * 0.75))
         // running: swing from the shoulder, more back than forward, elbow ~80–92°, hands hip → lower chest
-        const rs = t * RUN_ARM_GAIN
-        const runX = clamp(RUN_ARM_BACK_BIAS + (rs < 0 ? rs * RUN_ARM_FWD : rs * RUN_ARM_BWD), RUN_ARM_MIN, RUN_ARM_MAX)
-        const fwd = clamp(-runX / -RUN_ARM_MIN, 0, 1)
-        const back = clamp(runX / RUN_ARM_MAX, 0, 1)
-        const runFore = -(RUN_ELBOW - 0.05 * fwd + 0.15 * back)
-        const free = airborne || sliding ? 0 : 1 - Math.min(1, balance)
+        // difference of the two thighs: centred on zero whatever their mean angle (so the pump is symmetric)
+        const own = thighs[i].current
+        const split = other && own ? (other.rotation.x - own.rotation.x) * 0.5 * g.amp : 0
+        const sw = Math.tanh(split * RUN_ARM_SHARP) // −1 arm fully forward … +1 fully back
+        const runX = RUN_ARM_MID + RUN_ARM_AMP * sw
+        const runFore = -(RUN_ELBOW + 0.15 * Math.max(0, -sw) - 0.2 * Math.max(0, sw))
         pose.armX[i] = airborne ? -0.5 : sliding ? 0.5 : walkX + (runX - walkX) * runBlend
-        pose.armZ[i] = (i === 0 ? 1 : -1) * (0.06 + 0.04 * runBlend + balance * (airborne ? 1.2 : 0.8))
+        pose.armZ[i] = (i === 0 ? 1 : -1) * (0.06 + 0.05 * runBlend + balance * (airborne ? 1.2 : 0.8))
         pose.fore[i] = walkFore + (runFore - walkFore) * runBlend
-        // inward rotation of the upper arm: forearms point a little toward the midline, more on the forward swing
-        pose.armY[i] = (i === 0 ? -1 : 1) * runBlend * free * (0.15 + 0.2 * fwd)
+        // no upper-arm twist: with the elbow bent it swung the forearms across the chest (a boxer's guard)
+        pose.armY[i] = 0
       }
 
       // body: lean into speed and slope, roll into turns, hip twist; scramble with hands on steep slopes
@@ -1031,8 +1031,13 @@ export default function Player({
       torso.current.rotation.x = g.lean
       torso.current.rotation.y = damp(torso.current.rotation.y, pose.torsoYaw, 8, dt)
     }
+    // climbing: tip the head back to look up where you're going, not face-first into the wall
+    if (head.current) {
+      const lookUp = g.mode === 'climb' ? 0.35 + 0.25 * climbSteep : g.mode === 'mantle' ? 0.2 : 0
+      head.current.rotation.x = damp(head.current.rotation.x, -lookUp, 5, dt)
+    }
     // hands and feet on holds: climbing (all four), mantling (hands push on the edge for the first part)
-    let kArm = g.mode === 'ground' ? 14 : kJoints
+    let kArm = g.mode === 'ground' ? 20 : kJoints
     let kArmZ = 8
     let kFore = 14
     const handsIk = g.mode === 'mantle' && g.limbsReady && g.mantleT < MANTLE_HANDS_END
@@ -1103,7 +1108,7 @@ export default function Player({
           // the reaching pair lifts off, arcs to its new hold (tracked as the body moves) and plants;
           // it hurries when the supporting pair is running out of reach
           const hurry = (g.swingPair === 0 ? over1 : over0) ? 2.5 : 1
-          g.swingS = Math.min(1, g.swingS + (dt * hurry) / (input.run ? 0.2 : 0.28))
+          g.swingS = Math.min(1, g.swingS + (dt * hurry) / (input.run ? 0.28 : 0.38))
           const t = g.swingS
           const e = t * t * (3 - 2 * t)
           const lift = 0.1 * Math.sin(Math.PI * t)
@@ -1309,15 +1314,18 @@ export default function Player({
               <Part pos={[0, 0.5, 0]} color={SKIN}>
                 <cylinderGeometry args={[0.06, 0.07, 0.14, 6]} />
               </Part>
-              <Part pos={[0, 0.68, 0]} color={SKIN}>
-                <icosahedronGeometry args={[0.13, 1]} />
-              </Part>
-              <Part pos={[0, 0.77, 0]} color={HAT}>
-                <cylinderGeometry args={[0.3, 0.3, 0.025, 8]} />
-              </Part>
-              <Part pos={[0, 0.83, 0]} color={HAT}>
-                <cylinderGeometry args={[0.12, 0.15, 0.13, 8]} />
-              </Part>
+              {/* head + hat pivot at the neck */}
+              <group ref={head} position={[0, 0.55, 0]}>
+                <Part pos={[0, 0.13, 0]} color={SKIN}>
+                  <icosahedronGeometry args={[0.13, 1]} />
+                </Part>
+                <Part pos={[0, 0.22, 0]} color={HAT}>
+                  <cylinderGeometry args={[0.3, 0.3, 0.025, 8]} />
+                </Part>
+                <Part pos={[0, 0.28, 0]} color={HAT}>
+                  <cylinderGeometry args={[0.12, 0.15, 0.13, 8]} />
+                </Part>
+              </group>
               <Part pos={[0, 0.58, 0]} color={SCARF} rot={[Math.PI / 2, 0, 0]}>
                 <torusGeometry args={[0.15, 0.05, 4, 8]} />
               </Part>
