@@ -1,7 +1,7 @@
 'use client'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import * as THREE from 'three/webgpu'
-import { CuboidCollider, HeightfieldCollider, RigidBody } from '@react-three/rapier'
+import { useRapier } from '@react-three/rapier'
 import { worldRel, type Terrain as TerrainData } from '@/game/core/terrain'
 
 const DRY_GRASS = new THREE.Color('#c2b25f')
@@ -87,33 +87,47 @@ function buildGeometry(t: TerrainData) {
   return geo
 }
 
+/** Fixed colliders created imperatively (the declarative heightfield crashed rapier with "recursive use of an object") */
+function TerrainColliders({ terrain }: { terrain: TerrainData }) {
+  const { world, rapier } = useRapier()
+  useEffect(() => {
+    const n = terrain.segments + 1
+    // Rapier heightfields are column-major: index = iz + ix * n
+    const heights = new Float32Array(n * n)
+    for (let iz = 0; iz < n; iz++) for (let ix = 0; ix < n; ix++) heights[iz + ix * n] = terrain.heights[iz * n + ix]
+    const half = terrain.size / 2
+    const body = world.createRigidBody(rapier.RigidBodyDesc.fixed())
+    world.createCollider(
+      rapier.ColliderDesc.heightfield(terrain.segments, terrain.segments, heights, { x: terrain.size, y: 1, z: terrain.size }),
+      body,
+    )
+    // invisible walls
+    const wall = (hx: number, hz: number, x: number, z: number) =>
+      world.createCollider(rapier.ColliderDesc.cuboid(hx, 400, hz).setTranslation(x, 200, z), body)
+    wall(1, half, half + 1, 0)
+    wall(1, half, -half - 1, 0)
+    wall(half, 1, 0, half + 1)
+    wall(half, 1, 0, -half - 1)
+    return () => {
+      try {
+        world.removeRigidBody(body)
+      } catch {
+        /* world gone: nothing to clean */
+      }
+    }
+  }, [world, rapier, terrain])
+  return null
+}
+
 export default function Terrain({ terrain }: { terrain: TerrainData }) {
   const geometry = useMemo(() => buildGeometry(terrain), [terrain])
 
-  // Rapier heightfields are column-major: index = iz + ix * n
-  const heights = useMemo(() => {
-    const n = terrain.segments + 1
-    const out = new Array<number>(n * n)
-    for (let iz = 0; iz < n; iz++) for (let ix = 0; ix < n; ix++) out[iz + ix * n] = terrain.heights[iz * n + ix]
-    return out
-  }, [terrain])
-
-  const half = terrain.size / 2
   return (
     <>
       <mesh geometry={geometry} receiveShadow>
         <meshLambertMaterial vertexColors flatShading />
       </mesh>
-      <RigidBody type="fixed" colliders={false}>
-        <HeightfieldCollider
-          args={[terrain.segments, terrain.segments, heights, { x: terrain.size, y: 1, z: terrain.size }]}
-        />
-        {/* invisible walls */}
-        <CuboidCollider args={[1, 400, half]} position={[half + 1, 200, 0]} />
-        <CuboidCollider args={[1, 400, half]} position={[-half - 1, 200, 0]} />
-        <CuboidCollider args={[half, 400, 1]} position={[0, 200, half + 1]} />
-        <CuboidCollider args={[half, 400, 1]} position={[0, 200, -half - 1]} />
-      </RigidBody>
+      <TerrainColliders terrain={terrain} />
     </>
   )
 }
