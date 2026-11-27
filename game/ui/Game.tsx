@@ -31,6 +31,7 @@ export default function Game() {
   const layer = useJourney((s) => s.layer)
   const valley = useJourney((s) => s.valley)
   const center = useJourney((s) => s.sceneCenter)
+  const runId = useJourney((s) => s.runId)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -93,7 +94,7 @@ export default function Game() {
     <>
       {center && (
         <div className={`absolute inset-0 ${onFoot ? '' : 'invisible'}`}>
-          <Scene key={`${center.x}:${center.z}`} valley={valley} center={center} active={onFoot} />
+          <Scene key={runId} valley={valley} center={center} active={onFoot} />
         </div>
       )}
       {!onFoot && (

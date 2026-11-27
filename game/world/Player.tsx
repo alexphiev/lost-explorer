@@ -11,7 +11,7 @@ import { runStore } from '@/game/state/run'
 import { brushPlayer, brushSpeed } from '@/game/render/tsl/wind'
 import { bodyDropFor, footAlongCycle, HIP_Y, solveLeg, solveLimb, createLimbAngles, slopeSpeedFactor, strideLength, THIGH, type FootTarget, type LegAngles } from './gait'
 import { climbPose, createPose, fallPose, mantlePose, scrambleArms, swimPose } from './poses'
-import { HURT } from '@/game/core/travel'
+import { HURT, TIME_SCALE } from '@/game/core/travel'
 
 export type Controls = 'forward' | 'backward' | 'leftward' | 'rightward' | 'jump' | 'run'
 
@@ -411,7 +411,11 @@ export default function Player({
     const flowZ = inStream ? flow.flowZ : 0
     const flowSpeed = Math.hypot(flowX, flowZ)
     const run = runStore.getState()
-    const strength = Math.max(0, energy - run.coldLoss) // what the cold has left you
+    // effort spends energy (per game hour; the clock runs TIME_SCALE× faster than real time)
+    const was = run.audio // last frame's mode and pace
+    const work = was.mode === 1 ? 14 : was.mode === 2 ? 10 : was.speed > 4.5 ? 10 : was.speed > 0.5 ? 4 : 1.5
+    run.fatigue += (rawDt * TIME_SCALE * work) / 3600
+    const strength = Math.max(0, energy - run.coldLoss - run.fatigue) // what effort and the cold have left you
     let chilling = false
     let prompt = ''
     if (g.forceGround) {
@@ -617,9 +621,10 @@ export default function Player({
         const steepRun = running && grade < STEEP_RUN_GRADE
         if (steepRun) g.steepTime += dt
         else g.steepTime = Math.max(0, g.steepTime - dt * 2)
-        if (steepRun && g.steepTime > 0.35 && Math.random() < dt * 3) {
+        const dark = 1 + 2 * run.night // you see the ground less well at night
+        if (steepRun && g.steepTime > 0.35 && Math.random() < dt * 3 * dark) {
           startFall(0, 4 + Math.random() * 4, fwd.x * speedNow * 0.5, fwd.z * speedNow * 0.5, 'Too steep to run: your legs run away from you and you tumble')
-        } else if (running && water - feet > 0.05 && water - feet < 0.9 && Math.random() < dt * WET_SLIP_RATE) {
+        } else if (running && water - feet > 0.05 && water - feet < 0.9 && Math.random() < dt * WET_SLIP_RATE * dark) {
           startFall(0, 3 + Math.random() * 3, fwd.x * speedNow * 0.3, fwd.z * speedNow * 0.3, 'You slip on a wet stone')
         }
       }
@@ -886,7 +891,7 @@ export default function Player({
       // ecctrl pushes each frame by Δv = accDeltaTime · slideFriction · (vmax − v); an extra impulse
       // −b·v with b = k·(1/f − 1) (k = that same gain) settles the speed at exactly f · vmax
       // (b < 0 is a push, for the faster descents).
-      const hurtF = hp <= 0 ? 0.55 : hurt ? 0.75 : 1 // limping
+      const hurtF = (hp <= 0 ? 0.55 : hurt ? 0.75 : 1) * (strength <= 0 ? 0.6 : 1) // limping; exhausted
       // thorny scrub: you can push through it, at a crawl
       const inScrub = scrubAt(P.x, P.z)
       if (inScrub && !prompt) prompt = 'Pushing through thorny scrub'

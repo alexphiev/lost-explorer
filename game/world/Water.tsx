@@ -173,7 +173,7 @@ export default function Water({ field, tile }: { field: HeightField; tile: Terra
   const running = useMemo(() => makeWaterMaterial(true, 'y'), [])
   const lakes = useMemo(
     () =>
-      field.lakesNear(tile.centerX, tile.centerZ, 800).map((l) => {
+      field.lakesNear(tile.centerX, tile.centerZ, tile.size * 0.75).map((l) => {
         // rings of vertices so the swell can move the surface; depth per vertex for the colour and the soft shore
         const geo = new RingGeometry(0, l.radius + 1.5, 64, Math.max(8, Math.round(l.radius / 4)))
         const pos = geo.getAttribute('position')

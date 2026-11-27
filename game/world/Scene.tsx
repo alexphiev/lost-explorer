@@ -8,9 +8,15 @@ import { createRenderer } from '@/game/render/renderer'
 import { useSettings } from '@/game/state/settings'
 import { runStore } from '@/game/state/run'
 import { SCENE_TIME_SCALE, useJourney } from '@/game/state/journey'
-import { heightAt, sampleTile } from '@/game/core/terrain'
-import { anchorIn, safeSpawn, placeDecor, placeVegetation, placeVillage } from '@/game/core/placement'
-import { DAYS_ALLOWED, formatHour, HURT } from '@/game/core/travel'
+import { heightAt, sampleWorld } from '@/game/core/terrain'
+import { anchorIn, placeDecor, placeGround, placeVegetation, placeVillage, safeSpawn } from '@/game/core/placement'
+import { DAY_START, DAYS_ALLOWED, formatHour, HURT, LIMIT_HOURS, NIGHTFALL, TIME_SCALE } from '@/game/core/travel'
+
+/** Energy lost per game hour to the night cold away from a camp's fire, and health lost per game hour with no energy left. */
+const NIGHT_COLD = 4
+/** metres: within this of your camp you are "at camp" (rest, sleep, the fire's warmth) */
+const CAMP_NEAR = 12
+const STARVING = 5
 import type { Point, Valley } from '@/game/core/valley'
 import type { WaterSample } from '@/game/core/rivers'
 import { HAZE_COOL } from '@/game/render/tsl/atmosphere'
@@ -22,7 +28,8 @@ import SoundScape from './SoundScape'
 import Daylight, { DaylightFog, SUN_DIR } from './Daylight'
 import PostFX from './PostFX'
 import Village from './Village'
-import { ClueProp, GoalProp } from './Landmarks'
+import { CampProp, ClueProp, GoalProp } from './Landmarks'
+import { campSpot, campVerdict } from '@/game/core/camp'
 import Decor, { LOG_HALF, LOG_R } from './Decor'
 
 
@@ -85,13 +92,13 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
   const hud = useRef<PlayerHud>({ prompt: null, grip: null, gripBox: null, warmth: null, warmthBox: null })
   // one visit = from entering (or coming back from the map) to leaving. Energy, health and hour when it started:
   // cold water (runStore.coldLoss) and falls (runStore.injury) eat into them, applied when you leave.
-  const [visit, setVisit] = useState(() => ({ enteredAt: performance.now(), energy: run?.energy ?? 100, health: run?.health ?? 100, hour: run?.hour ?? 12 }))
+  const [visit, setVisit] = useState(() => ({ enteredAt: performance.now(), energy: run?.energy ?? 100, health: run?.health ?? 100, hour: run?.hour ?? 12, day: run?.day ?? 1 }))
   const { enteredAt, energy: startEnergy, health: startHealth } = visit
   const wasActive = useRef(active)
   useEffect(() => {
     if (active && !wasActive.current) {
       const r = useJourney.getState().run
-      setVisit({ enteredAt: performance.now(), energy: r?.energy ?? 100, health: r?.health ?? 100, hour: r?.hour ?? 12 })
+      setVisit({ enteredAt: performance.now(), energy: r?.energy ?? 100, health: r?.health ?? 100, hour: r?.hour ?? 12, day: r?.day ?? 1 })
       setElapsed(0)
     }
     wasActive.current = active
@@ -100,25 +107,30 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
     if (!active) return
     runStore.getState().coldLoss = 0
     runStore.getState().injury = 0
+    runStore.getState().fatigue = 0
     runStore.getState().sceneEnteredAt = enteredAt
     return () => {
       runStore.getState().sceneEnteredAt = 0
     }
   }, [enteredAt, active])
   const [elapsed, setElapsed] = useState(0)
+  const [atEdge, setAtEdge] = useState(false)
   const compass = useRef<HTMLDivElement>(null)
   const bearing = useJourney((s) => s.bearing)
 
   const world = useMemo(() => {
-    const terrain = sampleTile(valley.field, center.x, center.z)
+    // the whole level, one continuous terrain centred on the start (world origin)
+    const terrain = sampleWorld(valley.field)
     const vegetation = placeVegetation(terrain, valley.field, valley.seed)
     // appear where you stood on the map, or the nearest flat, safe ground
     const run = useJourney.getState().run
-    const at = safeSpawn(terrain, valley.field, vegetation, (run?.x ?? center.x) - center.x, (run?.z ?? center.z) - center.z)
+    const lx = (run?.x ?? center.x) - center.x
+    const lz = (run?.z ?? center.z) - center.z
+    // a resumed run puts you back exactly where you were; a new one on the nearest safe ground
+    const at = useJourney.getState().freshSpawn ? safeSpawn(terrain, valley.field, vegetation, lx, lz) : { x: lx, z: lz }
     return {
       terrain,
       vegetation,
-      decor: placeDecor(terrain, valley.field, valley.seed),
       houses: valley.goal.kind === 'village' ? placeVillage(terrain, valley.field, valley.seed, valley.village.x, valley.village.z) : [],
       goal: valley.goal.kind === 'village' ? null : anchorIn(terrain, valley.goal.x, valley.goal.z, valley.goal.rotation),
       clues: valley.clues.flatMap((c) => {
@@ -128,6 +140,22 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
       spawn: [at.x, heightAt(terrain, at.x, at.z) + 1.2, at.z] as [number, number, number],
     }
   }, [valley, center])
+
+  // small things (grass, flowers, pebbles, ferns, logs…) only around the player: rebuilt after ~60 m (not in the frame loop)
+  const [near, setNear] = useState(() => ({ x: world.spawn[0], z: world.spawn[2] }))
+  useEffect(() => {
+    if (!active) return
+    const id = window.setInterval(() => {
+      const p = runStore.getState().playerPosition
+      setNear((n) => (Math.hypot(p.x - n.x, p.z - n.z) > 60 ? { x: p.x, z: p.z } : n))
+    }, 500)
+    return () => window.clearInterval(id)
+  }, [active])
+  const ground = useMemo(() => {
+    const g = placeGround(world.terrain, valley.field, valley.seed, near)
+    return { conifers: [], broadleaves: [], rocks: [], bushes: g.bushes, grass: g.grass, flowers: g.flowers }
+  }, [world, valley, near])
+  const decor = useMemo(() => placeDecor(world.terrain, valley.field, valley.seed, near), [world, valley, near])
 
   // camera occluders: tree crowns and rocks as vertical cylinders [x, z, yBottom, yTop, radius]
   const occluders = useMemo(() => {
@@ -154,14 +182,119 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
     const gz = valley.village.z - world.terrain.centerZ
     const reach = valley.goal.kind === 'village' ? 60 : 12
     if (!active) return
+    let last = performance.now()
     const id = setInterval(() => {
-      const secs = (performance.now() - enteredAt) / 1000
+      const now = performance.now()
+      const dt = Math.min(2, (now - last) / 1000)
+      last = now
+      const secs = (now - enteredAt) / 1000
       setElapsed(secs)
-      const p = runStore.getState().playerPosition
-      if (Math.hypot(p.x - gx, p.z - gz) < reach) leaveScene(p.x, p.z, secs, false)
+      const r = runStore.getState()
+      const p = r.playerPosition
+      if (Math.hypot(p.x - gx, p.z - gz) < reach) return leaveScene(p.x, p.z, secs, false)
+      // survival, once a second (rates per game hour): the night is cold; an empty energy bar eats into health
+      const gameH = (dt * TIME_SCALE) / 3600
+      const h = (visit.hour + (secs * TIME_SCALE) / 3600) % 24
+      const dark = h >= NIGHTFALL || h < DAY_START
+      r.night = dark ? 1 : 0
+      const c = useJourney.getState().run?.camp
+      const atCamp = c ? Math.hypot(c.x - p.x, c.z - p.z) < CAMP_NEAR : false
+      if (dark) r.coldLoss += NIGHT_COLD * gameH * (atCamp ? (c!.fire ? 0 : 0.5) : 1)
+      if (visit.energy - r.coldLoss - r.fatigue <= 0) r.injury += STARVING * gameH
+      // the end: collapse, or out of time
+      const used = (visit.day - 1) * 24 + visit.hour - 8 + (secs * TIME_SCALE) / 3600
+      if (visit.health - r.injury <= 0 || used >= LIMIT_HOURS) return leaveScene(p.x, p.z, secs, false)
+      // the valley's edge: walls stop you, say why
+      const edge = world.terrain.size / 2 - 60
+      setAtEdge(Math.abs(p.x) > edge || Math.abs(p.z) > edge)
     }, 1000)
     return () => clearInterval(id)
-  }, [enteredAt, valley, world, leaveScene, active])
+  }, [enteredAt, valley, world, leaveScene, active, visit])
+
+  // what you see: the map fills in as you go (every 0.5 s, not in the frame loop), clues are found on the spot
+  const observe = useJourney((s) => s.observe)
+  const [toast, setToast] = useState<string | null>(null)
+  // messages fade after a few seconds
+  useEffect(() => {
+    if (!toast) return
+    const id = window.setTimeout(() => setToast(null), 8000)
+    return () => window.clearTimeout(id)
+  }, [toast])
+  useEffect(() => {
+    if (!active) return
+    let toastUntil = 0
+    const id = window.setInterval(() => {
+      const p = runStore.getState().playerPosition
+      const above = Math.max(0, p.y - 1 - heightAt(world.terrain, p.x, p.z))
+      const h = (visit.hour + ((performance.now() - visit.enteredAt) / 1000) * TIME_SCALE / 3600) % 24
+      const lines = observe(p.x, p.z, 1.7 + above, h >= NIGHTFALL || h < DAY_START, h)
+      if (lines.length) {
+        setToast(`Clue, pinned on your map: ${lines.join(' ')}`)
+        toastUntil = performance.now() + 9000
+      } else if (toastUntil && performance.now() > toastUntil) {
+        toastUntil = 0
+        setToast(null)
+      }
+    }, 500)
+    return () => window.clearInterval(id)
+  }, [active, observe, world, visit])
+
+  // the camp: C pitch / pack up, R rest an hour, L sleep until dawn (time skips; what the scene spent is settled first)
+  const camp = run?.camp ?? null
+  const setCamp = useJourney((s) => s.setCamp)
+  const campRest = useJourney((s) => s.campRest)
+  const [nearCamp, setNearCamp] = useState(false)
+  const restartVisit = useCallback(() => {
+    const r = useJourney.getState().run
+    setVisit({ enteredAt: performance.now(), energy: r?.energy ?? 100, health: r?.health ?? 100, hour: r?.hour ?? 12, day: r?.day ?? 1 })
+    setElapsed(0)
+  }, [])
+  useEffect(() => {
+    if (!active) return
+    const id = window.setInterval(() => {
+      const c = useJourney.getState().run?.camp
+      const p = runStore.getState().playerPosition
+      const near = !!c && Math.hypot(c.x - p.x, c.z - p.z) < CAMP_NEAR
+      setNearCamp(near)
+      // walked away: the camp is packed up
+      if (c && Math.hypot(c.x - p.x, c.z - p.z) > CAMP_NEAR * 2.5) setCamp(null)
+    }, 500)
+    return () => window.clearInterval(id)
+  }, [active, setCamp])
+  useEffect(() => {
+    if (!active) return
+    const onKey = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase()
+      if (k !== 'c' && k !== 'r' && k !== 'l') return
+      const p = runStore.getState().playerPosition
+      const a = runStore.getState().audio
+      const c = useJourney.getState().run?.camp
+      const near = !!c && Math.hypot(c.x - p.x, c.z - p.z) < CAMP_NEAR
+      const secs = (performance.now() - enteredAt) / 1000
+      const h = (visit.hour + (secs * TIME_SCALE) / 3600) % 24
+      if (k === 'c') {
+        if (c) {
+          setCamp(null)
+          setToast('You pack up your camp.')
+          return
+        }
+        if (a.mode !== 0 || !a.grounded) return setToast('Find firm ground first.')
+        const v = world.vegetation
+        const spot = campSpot(world.terrain, valley.field, [v.conifers, v.broadleaves], v.rocks, p.x, p.z)
+        if (!spot.ok) return setToast(spot.refusal ?? 'Not here.')
+        const verdict = campVerdict(spot.quality)
+        setCamp({ x: p.x, z: p.z, quality: spot.quality, fire: spot.fire, verdict: `${verdict} (${spot.notes.join(', ')})` })
+        setToast(`${verdict}: ${spot.notes.join(', ')}.`)
+        return
+      }
+      if (!near) return
+      if (k === 'l' && !(h >= 19 || h < DAY_START)) return setToast('Too early to sleep: wait for the evening (19:00).')
+      campRest(p.x, p.z, secs, k === 'l')
+      restartVisit()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active, enteredAt, visit, world, valley, setCamp, campRest, restartVisit])
 
   // M = back to the map (letter by key, not code, so AZERTY works). E (climb / look around) lives in Player.
   useEffect(() => {
@@ -219,7 +352,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
   // trip hazards: [x, z, yGround, top, radius, type, axisX, axisZ, halfLength] — type 0 trunk, 1 rock, 2 stump, 3 log
   const hazards = useMemo(() => {
     const v = world.vegetation
-    const d = world.decor
+    const d = decor
     const out = new Float32Array((v.conifers.length + v.broadleaves.length + v.rocks.length + d.stumps.length + d.logs.length) * HAZARD_STRIDE)
     let o = 0
     const add = (x: number, z: number, y0: number, y1: number, r: number, type: number, ax: number, az: number, half: number) => {
@@ -239,7 +372,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
     for (const it of d.stumps) add(it.x, it.z, it.y, it.y + 0.5 * it.scale, 0.42 * it.scale, 2, 0, 0, 0)
     for (const it of d.logs) add(it.x, it.z, it.y, it.y + 2 * LOG_R * it.scale, LOG_R * it.scale, 3, Math.cos(it.rotation), -Math.sin(it.rotation), LOG_HALF * it.scale)
     return out
-  }, [world])
+  }, [world, decor])
 
   // ?debug=1: expose the tile to scripts (find a tree, a rock, a cliff, a lake)
   useEffect(() => {
@@ -259,6 +392,9 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
     [startHour, enteredAt],
   )
   const hour = startHour + (elapsed * SCENE_TIME_SCALE) / 3600
+  const live = runStore.getState()
+  const liveEnergy = startEnergy - live.coldLoss - live.fatigue
+  const liveHealth = startHealth - live.injury
   const t = world.terrain
 
   return (
@@ -279,9 +415,11 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
           <Physics timeStep={1 / 60} paused={!active}>
             <Terrain terrain={t} />
             <Vegetation data={world.vegetation} />
-            <Decor data={world.decor} />
+            <Vegetation data={ground} />
+            <Decor data={decor} />
             <Village houses={world.houses} />
             {world.goal && valley.goal.kind !== 'village' && <GoalProp kind={valley.goal.kind} at={world.goal} />}
+            {camp && <CampProp at={{ x: camp.x - world.terrain.centerX, y: heightAt(world.terrain, camp.x - world.terrain.centerX, camp.z - world.terrain.centerZ), z: camp.z - world.terrain.centerZ, rotation: 0 }} fire={camp.fire} />}
             {world.clues.map((c, i) => (
               <ClueProp key={i} kind={c.kind} at={c.at} />
             ))}
@@ -306,16 +444,33 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
         <PostFX />
       </Canvas>
       <Compass strip={compass} bearing={bearing} />
+      {nearCamp && camp && (
+        <div className="pointer-events-none absolute bottom-28 left-1/2 -translate-x-1/2 rounded bg-black/55 px-3 py-1.5 text-center font-mono text-xs text-white">
+          ⛺ Camp{camp.fire ? ' · 🔥' : ''} · <b>R</b> rest 1 h · <b>L</b> sleep until dawn (from 19:00) · <b>C</b> pack up
+        </div>
+      )}
+      {toast && (
+        <div className="pointer-events-none absolute left-1/2 top-24 max-w-lg -translate-x-1/2 rounded-md border border-amber-200/40 bg-[#3b2a1a]/85 px-4 py-2 text-center font-serif text-sm text-amber-50 shadow-lg">
+          {toast}
+        </div>
+      )}
+      {atEdge && (
+        <div className="pointer-events-none absolute left-1/2 top-24 -translate-x-1/2 rounded bg-black/55 px-3 py-1 font-mono text-sm text-white">
+          The valley ends here: impenetrable forest and gorges. Turn back.
+        </div>
+      )}
       <div className="pointer-events-none absolute right-3 top-3 rounded bg-black/50 px-3 py-2 text-right font-mono text-sm text-white">
         {run && (
           <div>
-            Day {run.day}/{DAYS_ALLOWED} · {formatHour(hour % 24)} · energy {Math.max(0, Math.round(startEnergy - runStore.getState().coldLoss))} ·{' '}
-            <span className={startHealth - runStore.getState().injury < HURT ? 'text-red-400' : ''}>health {Math.max(0, Math.round(startHealth - runStore.getState().injury))}</span>
+            Day {Math.min(DAYS_ALLOWED + 1, visit.day + Math.floor(hour / 24))}/{DAYS_ALLOWED} · {formatHour(hour % 24)} {hour % 24 >= NIGHTFALL || hour % 24 < DAY_START ? '☾' : '☀'} · {Math.max(0, Math.round(LIMIT_HOURS - ((visit.day - 1) * 24 + hour - 8)))} h left
+            <br />
+            <span className={liveEnergy < 20 ? 'text-amber-300' : ''}>energy {Math.max(0, Math.round(liveEnergy))}</span> ·{' '}
+            <span className={liveHealth < HURT ? 'text-red-400' : ''}>health {Math.max(0, Math.round(liveHealth))}</span>
             {forceWebGL && <span className="ml-2 text-amber-300">(WebGL)</span>}
           </div>
         )}
         <div className="text-xs text-white/70">ZQSD/WASD/arrows · Shift run · Space jump · drag to look</div>
-        <div className="text-xs text-white/90">Walk into a steep slope or a rock to climb · E climb a tree · M back to the map</div>
+        <div className="text-xs text-white/90">Walk into a steep slope or a rock to climb · E climb a tree · C make camp · M map</div>
         <button
           className="pointer-events-auto mt-1 rounded bg-white/15 px-2 py-0.5 text-xs hover:bg-white/25"
           onClick={() => useSettings.getState().setMuted(!muted)}

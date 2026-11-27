@@ -41,15 +41,19 @@ function scatter(
   minScale: number,
   maxScale: number,
   clear = SPAWN_CLEAR_RADIUS,
-  maxRadius = Infinity, // only keep instances this close to the tile centre (small decor)
+  maxRadius = Infinity, // only keep instances this close to `around` (small decor streamed around the player)
+  around: { x: number; z: number } = { x: 0, z: 0 }, // tile-local
 ): Instance[] {
   const out: Instance[] = []
-  const half = Math.min(t.size / 2 - 5, maxRadius)
+  const half = t.size / 2 - 5
   const site: Site = { h: 0, slope: 0, moisture: 0 }
-  const c0x = Math.floor((t.centerX - half) / CHUNK)
-  const c1x = Math.floor((t.centerX + half) / CHUNK)
-  const c0z = Math.floor((t.centerZ - half) / CHUNK)
-  const c1z = Math.floor((t.centerZ + half) / CHUNK)
+  const r = Math.min(half, maxRadius)
+  const ax = maxRadius < Infinity ? around.x : 0
+  const az = maxRadius < Infinity ? around.z : 0
+  const c0x = Math.floor((t.centerX + ax - r) / CHUNK)
+  const c1x = Math.floor((t.centerX + ax + r) / CHUNK)
+  const c0z = Math.floor((t.centerZ + az - r) / CHUNK)
+  const c1z = Math.floor((t.centerZ + az + r) / CHUNK)
   for (let cz = c0z; cz <= c1z; cz++) {
     for (let cx = c0x; cx <= c1x; cx++) {
       const rng = makeRng(seed, `${name}:${cx}:${cz}`)
@@ -64,7 +68,7 @@ function scatter(
         const x = wx - t.centerX
         const z = wz - t.centerZ
         if (Math.abs(x) > half || Math.abs(z) > half) continue
-        if (maxRadius < Infinity && x * x + z * z > maxRadius * maxRadius) continue
+        if (maxRadius < Infinity && (x - ax) * (x - ax) + (z - az) * (z - az) > maxRadius * maxRadius) continue
         if (x * x + z * z < clear * clear) continue
         const y = heightAt(t, x, z)
         if (water(wx, wz) > y - 0.1) continue // nothing grows under water
@@ -79,25 +83,31 @@ function scatter(
   return out
 }
 
-/** Dense bushes on a jittered 3.5 m grid wherever the map has impassable scrub. */
-function scrubBushes(t: Terrain, field: HeightField, seed: string, max: number): Instance[] {
+/**
+ * Bushes on a jittered grid wherever the map has thorny scrub. Two layers: big, sparse ones (STEP 9 m) over the
+ * whole world so thickets read from afar, and the dense 3.5 m layer only within `radius` of `around` (tile-local).
+ */
+function scrubBushes(t: Terrain, field: HeightField, seed: string, max: number, STEP: number, scaleMul: number, around?: { x: number; z: number }, radius = Infinity): Instance[] {
   const out: Instance[] = []
-  const STEP = 3.5
   const half = t.size / 2 - 5
-  const g0x = Math.ceil((t.centerX - half) / STEP)
-  const g1x = Math.floor((t.centerX + half) / STEP)
-  const g0z = Math.ceil((t.centerZ - half) / STEP)
-  const g1z = Math.floor((t.centerZ + half) / STEP)
+  const ax = around?.x ?? 0
+  const az = around?.z ?? 0
+  const r = Math.min(half, radius)
+  const g0x = Math.ceil((t.centerX + ax - r) / STEP)
+  const g1x = Math.floor((t.centerX + ax + r) / STEP)
+  const g0z = Math.ceil((t.centerZ + az - r) / STEP)
+  const g1z = Math.floor((t.centerZ + az + r) / STEP)
   for (let gz = g0z; gz <= g1z && out.length < max; gz++) {
     for (let gx = g0x; gx <= g1x && out.length < max; gx++) {
       const wx = gx * STEP
       const wz = gz * STEP
       if (!field.scrub(wx, wz)) continue
-      const rng = makeRng(seed, `bush:${gx}:${gz}`)
+      const rng = makeRng(seed, `bush${STEP}:${gx}:${gz}`)
       const x = wx - t.centerX + (rng() - 0.5) * STEP
       const z = wz - t.centerZ + (rng() - 0.5) * STEP
-      if (x * x + z * z < 9) continue
-      out.push({ x, y: heightAt(t, x, z), z, scale: 0.9 + rng() * 0.8, rotation: rng() * Math.PI * 2, tint: rng() })
+      if (x * x + z * z < 9 || Math.abs(x) > half || Math.abs(z) > half) continue
+      if (radius < Infinity && (x - ax) * (x - ax) + (z - az) * (z - az) > radius * radius) continue
+      out.push({ x, y: heightAt(t, x, z), z, scale: (0.9 + rng() * 0.8) * scaleMul, rotation: rng() * Math.PI * 2, tint: rng() })
     }
   }
   return out
@@ -128,11 +138,24 @@ export function placeVegetation(t: Terrain, field: HeightField, seed: string): V
       // boulders worth climbing (2–4 m), more on slopes and high ground
       ...scatter(t, field.water, seed, 'boulders', 8, (s) => (s.slope > 0.8 ? 0 : 0.25 + 0.5 * smooth(0.15, 0.5, s.slope) + 0.4 * smooth(0.4, 0.8, s.h)), 2.6, 4.6),
     ],
+    // grass and flowers: streamed around the player (placeGround)
+    grass: [],
+    flowers: [],
+    bushes: scrubBushes(t, field, seed, 15000, 9, 1.8),
+  }
+}
+
+/** Ground cover is the densest layer: only within GROUND_RADIUS of `around` (tile-local), rebuilt as the player moves. */
+export const GROUND_RADIUS = 200
+export function placeGround(t: Terrain, field: HeightField, seed: string, around: { x: number; z: number }): Pick<Vegetation, 'grass' | 'flowers' | 'bushes'> {
+  const R = GROUND_RADIUS
+  return {
+    // the dense thicket layer of scrub, close by only
+    bushes: scrubBushes(t, field, seed, 8000, 3.5, 1, around, 250),
     // grass tufts and flowers: flat-ish meadows
-    grass: scatter(t, field.water, seed, 'grass', 1400, (s) => (s.slope > 0.45 ? 0 : 1 - smooth(0.55, 0.8, s.h)), 0.6, 1.4, 1.5),
+    grass: scatter(t, field.water, seed, 'grass', 1400, (s) => (s.slope > 0.45 ? 0 : 1 - smooth(0.55, 0.8, s.h)), 0.6, 1.4, 1.5, R, around),
     flowers: scatter(t, field.water, seed, 'flowers', 500, (s) =>
-      s.slope > 0.35 ? 0 : (1 - smooth(0.3, 0.55, s.h)) * (0.3 + 0.7 * (1 - Math.abs(s.moisture - 0.5) * 2)), 0.6, 1.2, 2),
-    bushes: scrubBushes(t, field, seed, 9000),
+      s.slope > 0.35 ? 0 : (1 - smooth(0.3, 0.55, s.h)) * (0.3 + 0.7 * (1 - Math.abs(s.moisture - 0.5) * 2)), 0.6, 1.2, 2, R, around),
   }
 }
 
@@ -173,21 +196,21 @@ export interface Decor {
   branches: Instance[]
 }
 
-export function placeDecor(t: Terrain, field: HeightField, seed: string): Decor {
+export function placeDecor(t: Terrain, field: HeightField, seed: string, around: { x: number; z: number } = { x: 0, z: 0 }): Decor {
   const R = DECOR_RADIUS
   const w = field.water
   return {
     // stones everywhere, more on slopes and high ground
-    pebbles: scatter(t, w, seed, 'pebbles', 4000, (s) => 0.25 + 0.5 * smooth(0.15, 0.6, s.slope) + 0.3 * smooth(0.5, 0.9, s.h), 0.08, 0.45, 1, R),
+    pebbles: scatter(t, w, seed, 'pebbles', 4000, (s) => 0.25 + 0.5 * smooth(0.15, 0.6, s.slope) + 0.3 * smooth(0.5, 0.9, s.h), 0.08, 0.45, 1, R, around),
     // ferns in damp, shaded mid ground
-    ferns: scatter(t, w, seed, 'ferns', 3500, (s) => (s.slope > 0.6 ? 0 : (0.15 + 0.85 * smooth(0.3, 0.75, s.moisture)) * (1 - smooth(0.7, 0.9, s.h))), 0.5, 1.2, 1.5, R),
+    ferns: scatter(t, w, seed, 'ferns', 3500, (s) => (s.slope > 0.6 ? 0 : (0.15 + 0.85 * smooth(0.3, 0.75, s.moisture)) * (1 - smooth(0.7, 0.9, s.h))), 0.5, 1.2, 1.5, R, around),
     // low bushes at forest edges and in meadows
-    shrubs: scatter(t, w, seed, 'shrubs', 900, (s) => (s.slope > 0.55 ? 0 : 0.25 + 0.5 * s.moisture), 0.5, 1.3, 3, R),
-    mushrooms: scatter(t, w, seed, 'mushrooms', 700, (s) => (s.slope > 0.4 ? 0 : 0.1 + 0.9 * smooth(0.4, 0.8, s.moisture)), 0.6, 1.4, 1.5, R),
+    shrubs: scatter(t, w, seed, 'shrubs', 900, (s) => (s.slope > 0.55 ? 0 : 0.25 + 0.5 * s.moisture), 0.5, 1.3, 3, R, around),
+    mushrooms: scatter(t, w, seed, 'mushrooms', 700, (s) => (s.slope > 0.4 ? 0 : 0.1 + 0.9 * smooth(0.4, 0.8, s.moisture)), 0.6, 1.4, 1.5, R, around),
     // fallen trunks and stumps in the forest band
-    logs: scatter(t, w, seed, 'logs', 45, (s) => (s.slope > 0.35 ? 0 : 0.3 + 0.7 * smooth(0.2, 0.5, s.h) * s.moisture), 0.7, 1.4, 6, R),
-    stumps: scatter(t, w, seed, 'stumps', 60, (s) => (s.slope > 0.45 ? 0 : 0.2 + 0.6 * smooth(0.2, 0.5, s.h)), 0.6, 1.3, 4, R),
-    branches: scatter(t, w, seed, 'branches', 700, (s) => (s.slope > 0.5 ? 0 : 0.3 + 0.5 * s.moisture), 0.5, 1.3, 1.5, R),
+    logs: scatter(t, w, seed, 'logs', 45, (s) => (s.slope > 0.35 ? 0 : 0.3 + 0.7 * smooth(0.2, 0.5, s.h) * s.moisture), 0.7, 1.4, 6, R, around),
+    stumps: scatter(t, w, seed, 'stumps', 60, (s) => (s.slope > 0.45 ? 0 : 0.2 + 0.6 * smooth(0.2, 0.5, s.h)), 0.6, 1.3, 4, R, around),
+    branches: scatter(t, w, seed, 'branches', 700, (s) => (s.slope > 0.5 ? 0 : 0.3 + 0.5 * s.moisture), 0.5, 1.3, 1.5, R, around),
   }
 }
 
