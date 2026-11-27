@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { runStore } from './run'
-import { climb, explore, newRun, rest, walk, type RunState } from '@/game/core/travel'
-import { snapToTileGrid } from '@/game/core/terrain'
+import { climb, explore, newRun, type RunState } from '@/game/core/travel'
 import { generateValley, type Point, type Valley } from '@/game/core/valley'
 import type { Best, SavedRun } from './save'
 import { levelById } from '@/game/core/levels'
@@ -32,9 +31,7 @@ interface Journey {
   start: (seed: string, level?: number | null) => void
   resume: (saved: SavedRun) => void
   setBearing: (b: number) => void
-  walk: () => void
   climb: () => void
-  rest: () => void
   enterScene: () => void
   /** back to the map from the 3D scene; `local*` = player position in the tile, `seconds` = real time spent */
   leaveScene: (localX: number, localZ: number, seconds: number, climbed: boolean) => void
@@ -63,6 +60,9 @@ export function sceneSnapshot(): RunState | null {
   return next.status === 'playing' ? next : null
 }
 
+/** The 3D world is one terrain centred on the start (world origin). */
+const WORLD_CENTER: Point = { x: 0, z: 0 }
+
 export const useJourney = create<Journey>((set, get) => ({
   level: null,
   valley: null,
@@ -74,36 +74,24 @@ export const useJourney = create<Journey>((set, get) => ({
   start: (seed, level = get().level) => {
     const valley = get().valley?.seed === seed ? get().valley! : generateValley(seed, level !== null ? levelById(level)?.spec : undefined)
     useClock.setState({ seconds: 0 })
-    set({ level, valley, run: newRun(valley), bearing: null, layer: 'map', sceneCenter: null, result: null })
+    // the level is played on foot: straight into the 3D valley
+    set({ level, valley, run: newRun(valley), bearing: null, layer: 'scene', sceneCenter: WORLD_CENTER, result: null })
   },
   resume: (saved) => {
     const valley = get().valley?.seed === saved.seed ? get().valley! : generateValley(saved.seed, saved.level !== null ? levelById(saved.level)?.spec : undefined)
     useClock.setState({ seconds: saved.seconds })
-    set({ level: saved.level, valley, run: saved.run, bearing: saved.bearing, layer: 'map', sceneCenter: null, result: null })
-    if (saved.layer === 'scene') get().enterScene()
+    set({ level: saved.level, valley, run: saved.run, bearing: saved.bearing, layer: 'scene', sceneCenter: WORLD_CENTER, result: null })
   },
   setBearing: (bearing) => set({ bearing }),
-  walk: () => {
-    const { valley, run, bearing } = get()
-    if (!valley || !run || bearing === null) return
-    const next = walk(valley, run, bearing).state
-    // walking on the map moves you on: the 3D scene waiting behind the map is dropped
-    const moved = next.x !== run.x || next.z !== run.z
-    set(moved ? { run: next, sceneCenter: null } : { run: next })
-  },
   climb: () => {
     const { valley, run } = get()
     if (valley && run) set({ run: climb(valley, run).state })
-  },
-  rest: () => {
-    const { valley, run } = get()
-    if (valley && run) set({ run: rest(valley, run).state })
   },
   enterScene: () => {
     const { run } = get()
     if (!run || run.status !== 'playing') return
     // back to the scene left behind the map, exactly as it was; else a new one around where you stand
-    set({ layer: 'scene', sceneCenter: get().sceneCenter ?? { x: snapToTileGrid(run.x), z: snapToTileGrid(run.z) } })
+    set({ layer: 'scene', sceneCenter: WORLD_CENTER })
   },
   leaveScene: (localX, localZ, seconds, climbed) => {
     const { valley, run, sceneCenter } = get()

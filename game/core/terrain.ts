@@ -2,8 +2,11 @@ import { createNoise2D } from 'simplex-noise'
 import { makeRng } from './rng'
 import { createRivers, createWaterSample, type RiverNetwork, type WaterSample } from './rivers'
 
-export const TERRAIN_SIZE = 1000 // 3D scene: metres, centred on the origin: x,z ∈ [-500, 500]
-export const TERRAIN_SEGMENTS = 256 // cells per side (~3.9 m)
+const TERRAIN_SIZE = 1000 // grid reference: 3.9 m cells (256 per km), shared by everything sampled in 3D
+const TERRAIN_SEGMENTS = 256
+/** The whole level in 3D: one continuous terrain, metres, centred on the start (x, z ∈ [−1500, 1500]). */
+export const WORLD_SIZE = 3000
+export const WORLD_SEGMENTS = 768 // 3.9 m cells, like the old 1 km tiles
 
 /** Continuous, deterministic world: same seed → same height at any (x, z), in metres. */
 export interface HeightField {
@@ -290,7 +293,7 @@ function designValleys(rng: () => number, exitBearing: number, rawHeight: (x: nu
   const rad = (exitBearing * Math.PI) / 180
   const ex = Math.sin(rad)
   const ez = -Math.cos(rad)
-  // main river: from beyond the far side of the map to beyond the exit side, passing 1–2 km beside the start
+  // main river: from beyond the far side of the map to beyond the exit side, passing 0.5–1 km beside the start
   const px = -ez
   const pz = ex
   const R = 7000
@@ -298,7 +301,7 @@ function designValleys(rng: () => number, exitBearing: number, rawHeight: (x: nu
   let mx: number[] = []
   let mz: number[] = []
   for (let k = 0; k < 8; k++) {
-    off = (rng() < 0.5 ? -1 : 1) * (1000 + rng() * 1200)
+    off = (rng() < 0.5 ? -1 : 1) * (550 + rng() * 450) // within the 3 km world (redesign §7)
     ;[mx, mz] = meanderLine(rng, -ex * R + px * off * 0.6, -ez * R + pz * off * 0.6, ex * R + px * off, ez * R + pz * off, 700)
     if (Math.min(...mx.map((x, i) => Math.hypot(x, mz[i]))) > V_CORE + 300) break
   }
@@ -377,9 +380,9 @@ export function snapToTileGrid(v: number): number {
   return Math.round(v / cell) * cell
 }
 
-/** The 1 km 3D tile around world (x, z) (snapped to the tile grid). */
-export function sampleTile(field: HeightField, x: number, z: number): Terrain {
-  return sampleTerrain(field, TERRAIN_SIZE, TERRAIN_SEGMENTS, snapToTileGrid(x), snapToTileGrid(z))
+/** The whole level's 3D terrain (centred on the start, which is the world origin). */
+export function sampleWorld(field: HeightField): Terrain {
+  return sampleTerrain(field, WORLD_SIZE, WORLD_SEGMENTS, 0, 0)
 }
 
 /** Typical world height range (all seeds): used so the same spot looks the same in every tile. */

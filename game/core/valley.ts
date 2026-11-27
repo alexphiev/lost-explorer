@@ -3,8 +3,8 @@ import { DEFAULT_SPEC, type LevelSpec } from './levels'
 import type { ClueKind, GoalKind } from './goals'
 import { createHeightField, heightAt, sampleTerrain, slopeAt, type HeightField, type Terrain } from './terrain'
 
-export const MAP_SIZE = 12000 // metres, centred on the start (origin)
-export const MAP_SEGMENTS = 256 // ~47 m per cell
+export const MAP_SIZE = 3000 // metres, centred on the start (origin): the same window as the 3D world
+export const MAP_SEGMENTS = 256 // ~11.7 m per cell
 
 export interface Point {
   x: number
@@ -63,12 +63,12 @@ function findLandmarks(field: HeightField, map: Terrain): Landmark[] {
   const out: Landmark[] = []
   for (const t of tops) {
     if (out.length >= 10) break
-    if (out.some((o) => Math.hypot(o.x - t.x, o.z - t.z) < 1500)) continue
+    if (out.some((o) => Math.hypot(o.x - t.x, o.z - t.z) < 450)) continue
     out.push({ kind: 'peak', x: t.x, z: t.z, label: `Summit, ${Math.round(t.h)} m` })
   }
   const half = map.size / 2
   for (const l of field.lakesNear(0, 0, map.size * 0.72)) {
-    if (l.radius < 60 || Math.abs(l.x) > half || Math.abs(l.z) > half) continue
+    if (l.radius < 30 || Math.abs(l.x) > half || Math.abs(l.z) > half) continue
     out.push({ kind: 'lake', x: l.x, z: l.z, label: l.radius > 250 ? 'Lake' : 'Pond' })
   }
   return out
@@ -130,7 +130,7 @@ export function generateValley(seed: string, spec: LevelSpec = DEFAULT_SPEC): Va
   const cell = map.size / map.segments
   const index = (x: number, z: number) => Math.round((z + map.size / 2) / cell) * n + Math.round((x + map.size / 2) / cell)
   const site = { field, map, ok, index }
-  const goal = placeGoal(site, spec) ?? placeGoal(site, { ...spec, distance: [3000, 5800] }) ?? { ...placeGoal(site, { ...DEFAULT_SPEC, distance: [3000, 5800] })!, kind: spec.goal }
+  const goal = placeGoal(site, spec) ?? placeGoal(site, { ...spec, distance: [450, 1300] }) ?? { ...placeGoal(site, { ...DEFAULT_SPEC, distance: [450, 1300] })!, kind: spec.goal }
   const clues = placeClues(site, seed, spec, goal, parent)
   return { seed, field, map, start, village: { x: goal.x, z: goal.z }, goal, clues, landmarks: findLandmarks(field, map) }
 }
@@ -143,7 +143,7 @@ interface SiteInfo {
 }
 
 const angleDiff = (a: number, b: number) => Math.abs(((a - b + 540) % 360) - 180)
-const inMap = (x: number, z: number) => Math.abs(x) < MAP_SIZE / 2 - 250 && Math.abs(z) < MAP_SIZE / 2 - 250
+const inMap = (x: number, z: number) => Math.abs(x) < MAP_SIZE / 2 - 120 && Math.abs(z) < MAP_SIZE / 2 - 120
 
 /** Firm, dry, walkable ground reachable from the start. */
 function standable(s: SiteInfo, x: number, z: number, maxSlope = 0.3): boolean {
@@ -200,8 +200,8 @@ function placeGoal(s: SiteInfo, spec: LevelSpec): Goal | null {
     return best
   }
   if (kind === 'hut') {
-    for (const l of field.lakesNear(0, 0, rMax + 600)) {
-      if (l.radius < 60) continue
+    for (const l of field.lakesNear(0, 0, rMax + 300)) {
+      if (l.radius < 35) continue
       for (let a = 0; a < 360; a += 15) {
         const r = (a * Math.PI) / 180
         const x = l.x + Math.sin(r) * (l.radius + 10)
@@ -212,8 +212,8 @@ function placeGoal(s: SiteInfo, spec: LevelSpec): Goal | null {
     }
     return best
   }
-  for (let a = 0; a < 360; a += 3) {
-    for (let d = rMin; d <= rMax; d += 100) {
+  for (let a = 0; a < 360; a += 2) {
+    for (let d = rMin; d <= rMax; d += 20) {
       const x = Math.sin((a * Math.PI) / 180) * d
       const z = -Math.cos((a * Math.PI) / 180) * d
       if (!standable(s, x, z, kind === 'cave' ? 0.4 : 0.25)) continue
@@ -258,7 +258,7 @@ function placeClues(s: SiteInfo, seed: string, spec: LevelSpec, goal: Goal, pare
     // cairns on the highest walkable ground nearby, other clues a little off the route
     for (let t = 0; t < 40; t++) {
       const a = rng() * Math.PI * 2
-      const r = kind === 'cairn' ? rng() * 600 : 80 + rng() * 220
+      const r = kind === 'cairn' ? rng() * 250 : 25 + rng() * 75
       const x = p.x + Math.cos(a) * r
       const z = p.z + Math.sin(a) * r
       if (!standable(s, x, z, 0.5)) continue

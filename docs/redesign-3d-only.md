@@ -85,12 +85,12 @@ Status: agreed with the user on 2026-11-27. This doc wins over `concept.md` §3 
 
 ## 8. Tasks (one GitHub issue each, in order)
 
-1. **World**: one continuous 3 km 3D valley; streaming small decor; world edge; map window; save and resume at the exact position. The map travel actions are removed.
-2. **Time and survival**: 1 min = 2.4 h, 72 h limit, a continuous day/night cycle in 3D (dark but playable nights, moon, stars), energy, health and cold rules, lose screen. HUD: day, hour, energy, health.
-3. **Living map**: fog revealed by what you see (continuous viewshed, bigger reveals when climbing), map as an overlay tool (M, game paused), pins, trail, journal.
-4. **Camp**: make camp (C), tent and fire, rest and sleep, camp quality and night risks.
-5. **Night level design**: lights on goals, night-only clues (lantern, fireflies, fire glow, North Star), night sight radius.
-6. **Levels at the new scale**: goal and clue distances, valleys and rivers within the window, density of things to find, balance pass for the 30-minute target.
+1. (#35) **World**: one continuous 3 km 3D valley; streaming small decor; world edge; map window; save and resume at the exact position. The map travel actions are removed.
+2. (#36) **Time and survival**: 1 min = 2.4 h, 72 h limit, a continuous day/night cycle in 3D (dark but playable nights, moon, stars), energy, health and cold rules, lose screen. HUD: day, hour, energy, health.
+3. (#37) **Living map**: fog revealed by what you see (continuous viewshed, bigger reveals when climbing), map as an overlay tool (M, game paused), pins, trail, journal.
+4. (#38) **Camp**: make camp (C), tent and fire, rest and sleep, camp quality and night risks.
+5. (#39) **Night level design**: lights on goals, night-only clues (lantern, fireflies, fire glow, North Star), night sight radius.
+6. (#40) **Levels at the new scale**: goal and clue distances, valleys and rivers within the window, density of things to find, balance pass for the 30-minute target.
 
 Out of scope for this redesign: accounts and leaderboard (#29, #30), the onboarding tutorial (next, once the new loop is fun), and real audio samples.
 

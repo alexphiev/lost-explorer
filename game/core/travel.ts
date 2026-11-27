@@ -155,8 +155,8 @@ const goalFound = (v: Valley) => GOALS[v.goal.kind].found
 export function newRun(v: Valley): RunState {
   const fog = createFog(v.map)
   // looking around from where you woke up
-  revealViewshed(v.map, fog, v.start.x, v.start.z, 4, 1200)
-  revealAround(v.map, fog, v.start.x, v.start.z, 120)
+  revealViewshed(v.map, fog, v.start.x, v.start.z, 4, 450)
+  revealAround(v.map, fog, v.start.x, v.start.z, 60)
   return {
     day: 1,
     hour: 8,
@@ -324,7 +324,7 @@ export function walk(v: Valley, s: RunState, bearing: number): { state: RunState
 export function explore(v: Valley, s: RunState, x: number, z: number, hours: number): RunState {
   if (s.status !== 'playing') return s
   const moved = Math.hypot(x - s.x, z - s.z)
-  revealAround(v.map, s.fog, x, z, 120)
+  revealAround(v.map, s.fog, x, z, 60)
   const won = Math.hypot(x - v.village.x, z - v.village.z) < goalReach(v)
   const minutes = Math.round(hours * 60)
   const spotted = spotClues(v, s, x, z)
@@ -351,7 +351,7 @@ export function climb(v: Valley, s: RunState): { state: RunState; stop: Stop } {
   if (isNight(s.hour)) return withStop(s, { kind: 'refused', message: 'Too dark to see anything from up there.' })
   if (s.energy < 10) return withStop(s, { kind: 'refused', message: 'Too tired to climb.' })
   const rel = (heightAt(v.map, s.x, s.z) - v.map.minHeight) / (v.map.maxHeight - v.map.minHeight)
-  const radius = 1500 + rel * 3500
+  const radius = 500 + rel * 1000
   revealViewshed(v.map, s.fog, s.x, s.z, 15, radius)
   const spotted = spotClues(v, s, s.x, s.z)
   s = spotted.state

@@ -58,7 +58,7 @@ function Bar({ label, value, color, note }: { label: string; value: number; colo
 }
 
 export default function MapView() {
-  const { level, valley, run, bearing, result, start, setBearing, walk, climb, rest, enterScene } = useJourney()
+  const { level, valley, run, bearing, result, start, setBearing, enterScene } = useJourney()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const offRef = useRef<HTMLCanvasElement | null>(null)
   const hits = useRef<Hit[]>([])
@@ -144,8 +144,8 @@ export default function MapView() {
     // bearing line
     if (bearing !== null) {
       const r = (bearing * Math.PI) / 180
-      const ex = px + Math.sin(r) * 900 * k
-      const ez = pz - Math.cos(r) * 900 * k
+      const ex = px + Math.sin(r) * 300 * k
+      const ez = pz - Math.cos(r) * 300 * k
       ctx.strokeStyle = '#3b2a1a'
       ctx.lineWidth = 1.5
       ctx.beginPath()
@@ -210,16 +210,16 @@ export default function MapView() {
     ctx.fillText('N', 0, -26 + 2)
     ctx.restore()
 
-    // scale bar: 1 km
+    // scale bar: 500 m
     ctx.save()
     ctx.translate(14, size - 18)
     ctx.fillStyle = '#3b2a1a'
-    ctx.fillRect(0, 0, 1000 * k, 3)
+    ctx.fillRect(0, 0, 500 * k, 3)
     ctx.fillStyle = '#f4ecd8'
-    ctx.fillRect(500 * k, 0.5, 500 * k - 0.5, 2)
+    ctx.fillRect(250 * k, 0.5, 250 * k - 0.5, 2)
     ctx.fillStyle = '#3b2a1a'
     ctx.font = '11px Georgia, serif'
-    ctx.fillText('1 km', 0, -4)
+    ctx.fillText('500 m', 0, -4)
     ctx.restore()
 
     hits.current = found
@@ -255,14 +255,12 @@ export default function MapView() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase()
-      if (k === 'enter' || k === 'w') walk()
-      else if (k === 'c') climb()
-      else if (k === 'r') rest()
-      else if (k === 'x') enterScene()
+      // the map is a tool: close it to walk on
+      if (k === 'm' || k === 'x' || k === 'escape') enterScene()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [walk, climb, rest, enterScene])
+  }, [enterScene])
 
   if (!valley || !run) return null
   const lv = level !== null ? levelById(level) : undefined
@@ -388,20 +386,9 @@ export default function MapView() {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <button className="btn-game green col-span-2 !py-3 text-lg" disabled={!playing || bearing === null} onClick={walk}>
-              Walk 2 h <span className="kbd">W</span>
-            </button>
-            <button className="btn-game" disabled={!playing} onClick={climb}>
-              Climb <span className="kbd">C</span>
-            </button>
-            <button className="btn-game" disabled={!playing} onClick={rest}>
-              {sleeping ? 'Sleep' : 'Rest'} <span className="kbd">R</span>
-            </button>
-            <button className="btn-game col-span-2" disabled={!playing} onClick={enterScene}>
-              Explore on foot <span className="kbd">X</span>
-            </button>
-          </div>
+          <button className="btn-game green !py-3 text-lg" disabled={!playing} onClick={enterScene}>
+            Back on foot <span className="kbd">M</span>
+          </button>
 
           <div>
             <h3 className="mb-1 text-xs font-bold uppercase tracking-[0.2em] opacity-60">Journal</h3>
@@ -414,7 +401,7 @@ export default function MapView() {
             </ul>
           </div>
           <p className="text-xs opacity-60">
-            {km.toFixed(1)} km walked · {run.marks.length} places found · clues point to the next clue, the last one to the goal. Climb to spot them from afar.
+            {km.toFixed(1)} km walked · {run.marks.length} places found · clues point to the next clue, the last one to the goal. Click the map to set a bearing: it shows on your compass.
           </p>
         </aside>
       </div>

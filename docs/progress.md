@@ -110,11 +110,19 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] Wake, take 3: no more big concentric rings. Moving: a V trailing behind along the swim direction (arms at ~20°, faint white) with small transverse ripples inside; always: small ripples and a little foam right at the body. Swim stroke sound: falling low-pass slosh + bubbly blips (no hiss); water steps the same way
 - [x] Water sound another −55 % (babble 0.035, rush 0.05); footsteps −65 %, swim strokes −50 %
 
+## Redesign: everything on foot (docs/redesign-3d-only.md, issues #35–#40)
+- [x] 1 (#35) One continuous 3 km 3D valley, no map travel: `sampleWorld` (768 segs, ~2 s to sample), terrain drawn in 500 m chunks (full detail within 750 m, 1/4 res + skirts beyond), one heightfield collider; trees/rocks/sparse 9 m scrub layer for the whole world, grass/flowers/decor/dense 3.5 m scrub streamed within 200–250 m (rebuilt after 60 m); map = same 3 km window (11.7 m cells); levels start on foot, map is open/close only (M/X/Esc), no walk/climb/rest on the map; goal distances 600–1250 m; main valley 0.5–1 km from the start; edge prompt
+- [ ] 2 (#36) Time 1 min = 2.4 h, day/night, survival
+- [ ] 3 (#37) Living map
+- [ ] 4 (#38) Camp
+- [ ] 5 (#39) Night clues of light
+- [ ] 6 (#40) Levels at the new scale
+
 ## Current task
-None. Playtest 3 fixes done.
+Redesign task 2 (#36).
 
 ## Next action
-User playtest of the menu, map markers and resume. Then #29/#30 when a database is wanted.
+Continue the redesign tasks in order; one PR when the new loop is playable.
 
 ## Blockers
 None.
