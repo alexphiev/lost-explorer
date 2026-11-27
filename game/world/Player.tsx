@@ -234,6 +234,8 @@ export default function Player({
     fallVx: 0,
     fallVz: 0,
     fallGround: -Infinity, // standing on a rock / log when it happened
+    fallX: 0,
+    fallZ: 0,
     fallFromY: spawn[1], // body height where the current jump / fall started
     fallMsg: '',
     msgTime: 0, // keep the fall message up a moment after getting up
@@ -460,9 +462,11 @@ export default function Player({
       const hv = Math.hypot(vel.x, vel.z)
       const speedNow = Math.max(hv, g.prevHv) // hitting a trunk stops you dead: use last frame's speed too
       g.prevHv = hv
-      const running = g.mode === 'ground' && grounded && speedNow > RUN_FALL_SPEED && g.safeT <= 0
+      // running = Shift allowed (not too hurt) and fast; never on the landing frame (a hard landing wins)
+      const running = g.mode === 'ground' && grounded && input.run && speedNow > RUN_FALL_SPEED && g.safeT <= 0 && g.airTime < 0.15
       let nearLog = -1
-      if (running) {
+      if (g.mode === 'ground') {
+        // logs are tracked whatever the speed, so slowing down beside one doesn't earn a second roll
         for (let o = 0, i = 0; o < hazards.length; o += HAZARD_STRIDE, i++) {
           const dx = hazards[o] - P.x
           const dz = hazards[o + 1] - P.z
@@ -480,6 +484,7 @@ export default function Player({
             if (rise > 0.1 && Math.hypot(qx, qz) < r + 0.35) nearLog = i
             continue
           }
+          if (!running) continue
           if (type === 1 && (rise < 0.15 || rise > 0.7)) continue // big rocks are climbed, pebbles stepped on
           if (type === 2 && rise < 0.12) continue
           const d = Math.hypot(dx, dz) || 1e-3
@@ -492,7 +497,7 @@ export default function Player({
       }
       if (nearLog !== g.lastLog) {
         // one roll per log you run across (walking over them is fine)
-        if (nearLog >= 0 && g.mode === 'ground' && Math.random() < LOG_TRIP_CHANCE) {
+        if (nearLog >= 0 && running && Math.random() < LOG_TRIP_CHANCE) {
           startFall(0, 3 + Math.random() * 3, fwd.x * speedNow * 0.35, fwd.z * speedNow * 0.35, 'Your boot catches on a fallen log')
         }
         g.lastLog = nearLog
@@ -505,9 +510,10 @@ export default function Player({
           const uz = vel.z / hv
           grade = (heightAt(terrain, P.x + ux, P.z + uz) - heightAt(terrain, P.x - ux, P.z - uz)) / 2
         }
-        if (running && grade < STEEP_RUN_GRADE) g.steepTime += dt
+        const steepRun = running && grade < STEEP_RUN_GRADE
+        if (steepRun) g.steepTime += dt
         else g.steepTime = Math.max(0, g.steepTime - dt * 2)
-        if (g.steepTime > 0.35 && Math.random() < dt * 3) {
+        if (steepRun && g.steepTime > 0.35 && Math.random() < dt * 3) {
           startFall(0, 4 + Math.random() * 4, fwd.x * speedNow * 0.5, fwd.z * speedNow * 0.5, 'Too steep to run: your legs run away from you and you tumble')
         } else if (running && water - feet > 0.05 && water - feet < 0.9 && Math.random() < dt * WET_SLIP_RATE) {
           startFall(0, 3 + Math.random() * 3, fwd.x * speedNow * 0.3, fwd.z * speedNow * 0.3, 'You slip on a wet stone')
@@ -523,6 +529,8 @@ export default function Player({
       g.fallVx = vx
       g.fallVz = vz
       g.fallGround = grounded && e!.standPoint.y > hC + 0.2 ? e!.standPoint.y : -Infinity
+      g.fallX = P.x
+      g.fallZ = P.z
       g.steepTime = 0
       const cur = Math.max(0, health - run.injury)
       const d = Math.min(cur, Math.round(damage))
@@ -639,6 +647,8 @@ export default function Player({
       // skid to a stop along the ground (or bounce back off a trunk)
       g.fallVx = damp(g.fallVx, 0, 3, dt)
       g.fallVz = damp(g.fallVz, 0, 3, dt)
+      // the rock / log you fell on only holds you while you're still on it
+      if (g.fallGround > -Infinity && Math.hypot(P.x - g.fallX, P.z - g.fallZ) > 0.6) g.fallGround = -Infinity
       const gy = Math.max(hC, g.fallGround) + ROOT_TO_FEET
       setBody(g.fallVx, clamp(follow(gy - P.y, 0.5), -6, 2), g.fallVz, g.yaw)
       prompt = g.fallMsg
