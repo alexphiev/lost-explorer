@@ -201,6 +201,28 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
     return () => clearInterval(id)
   }, [enteredAt, valley, world, leaveScene, active, visit])
 
+  // what you see: the map fills in as you go (every 0.5 s, not in the frame loop), clues are found on the spot
+  const observe = useJourney((s) => s.observe)
+  const [toast, setToast] = useState<string | null>(null)
+  useEffect(() => {
+    if (!active) return
+    let toastUntil = 0
+    const id = window.setInterval(() => {
+      const p = runStore.getState().playerPosition
+      const above = Math.max(0, p.y - 1 - heightAt(world.terrain, p.x, p.z))
+      const h = (visit.hour + ((performance.now() - visit.enteredAt) / 1000) * TIME_SCALE / 3600) % 24
+      const lines = observe(p.x, p.z, 1.7 + above, h >= NIGHTFALL || h < DAY_START, h)
+      if (lines.length) {
+        setToast(lines.join(' '))
+        toastUntil = performance.now() + 9000
+      } else if (toastUntil && performance.now() > toastUntil) {
+        toastUntil = 0
+        setToast(null)
+      }
+    }, 500)
+    return () => window.clearInterval(id)
+  }, [active, observe, world, visit])
+
   // M = back to the map (letter by key, not code, so AZERTY works). E (climb / look around) lives in Player.
   useEffect(() => {
     if (!active) return
@@ -348,6 +370,12 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
         <PostFX />
       </Canvas>
       <Compass strip={compass} bearing={bearing} />
+      {toast && (
+        <div className="pointer-events-none absolute left-1/2 top-24 max-w-lg -translate-x-1/2 rounded-md border border-amber-200/40 bg-[#3b2a1a]/85 px-4 py-2 text-center font-serif text-sm text-amber-50 shadow-lg">
+          <div className="text-xs uppercase tracking-[0.2em] text-amber-300">Clue · pinned on your map</div>
+          {toast}
+        </div>
+      )}
       {atEdge && (
         <div className="pointer-events-none absolute left-1/2 top-24 -translate-x-1/2 rounded bg-black/55 px-3 py-1 font-mono text-sm text-white">
           The valley ends here: impenetrable forest and gorges. Turn back.

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { runStore } from './run'
-import { checkEnd, climb, explore, newRun, TIME_SCALE, type RunState } from '@/game/core/travel'
+import { checkEnd, climb, explore, newRun, observe, TIME_SCALE, type RunState } from '@/game/core/travel'
 import { generateValley, type Point, type Valley } from '@/game/core/valley'
 import type { Best, SavedRun } from './save'
 import { levelById } from '@/game/core/levels'
@@ -33,6 +33,8 @@ interface Journey {
   setBearing: (b: number) => void
   climb: () => void
   enterScene: () => void
+  /** On foot: what the player sees from tile-local (x, z) (fog, trail, clues). Returns new journal lines, if any. */
+  observe: (localX: number, localZ: number, eye: number, night: boolean, hour: number) => string[]
   /** back to the map from the 3D scene; `local*` = player position in the tile, `seconds` = real time spent */
   leaveScene: (localX: number, localZ: number, seconds: number, climbed: boolean) => void
 }
@@ -85,6 +87,13 @@ export const useJourney = create<Journey>((set, get) => ({
   climb: () => {
     const { valley, run } = get()
     if (valley && run) set({ run: climb(valley, run).state })
+  },
+  observe: (localX, localZ, eye, night, hour) => {
+    const { valley, run, sceneCenter } = get()
+    if (!valley || !run || !sceneCenter) return []
+    const o = observe(valley, run, sceneCenter.x + localX, sceneCenter.z + localZ, eye, night, hour)
+    if (o.state !== run) set({ run: o.state })
+    return o.lines
   },
   enterScene: () => {
     const { run } = get()

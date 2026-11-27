@@ -413,3 +413,23 @@ export function checkEnd(s: RunState): RunState {
   }
   return s
 }
+
+/**
+ * What you see standing at world (x, z), eye `eye` metres above the ground: clears the fog in place (line of sight,
+ * farther when higher up, short at night), draws the trail, and finds clues. Returns the new state only if
+ * clues were found (fog and trail are mutated in place), with the journal lines.
+ */
+export function observe(v: Valley, s: RunState, x: number, z: number, eye: number, night: boolean, hour: number): { state: RunState; lines: string[] } {
+  if (s.status !== 'playing') return { state: s, lines: [] }
+  const rel = (heightAt(v.map, x, z) - v.map.minHeight) / Math.max(1, v.map.maxHeight - v.map.minHeight)
+  const radius = night ? 150 : 400 + rel * 300 + Math.min(300, eye * 15)
+  revealViewshed(v.map, s.fog, x, z, eye, radius, night ? 0.6 : 0.45)
+  revealAround(v.map, s.fog, x, z, 40)
+  // the trail on the map: a point every ~20 m
+  const n = s.path.length
+  if (n < 2 || Math.hypot(x - s.path[n - 2], z - s.path[n - 1]) > 20) s.path.push(x, z)
+  const spotted = spotClues(v, s, x, z, hour)
+  if (!spotted.lines.length) return { state: spotted.state === s ? s : spotted.state, lines: [] }
+  const stop: Stop = { kind: 'clue', message: spotted.lines.join(' ') }
+  return { state: { ...spotted.state, log: [...spotted.state.log, stop] }, lines: spotted.lines }
+}
