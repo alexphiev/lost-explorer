@@ -24,6 +24,8 @@ import Terrain from './Terrain'
 import Vegetation, { rockSquash, ROCK_SINK, TREE_SINK } from './Vegetation'
 import Player, { CLIMB_STRIDE, HAZARD_STRIDE, keyboardMap, type PlayerHud } from './Player'
 import Water from './Water'
+import Trail, { trailNear } from './Trail'
+import type { Instance } from '@/game/core/placement'
 import SoundScape from './SoundScape'
 import Daylight, { DaylightFog, SUN_DIR } from './Daylight'
 import PostFX from './PostFX'
@@ -121,7 +123,11 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
   const world = useMemo(() => {
     // the whole level, one continuous terrain centred on the start (world origin)
     const terrain = sampleWorld(valley.field)
-    const vegetation = placeVegetation(terrain, valley.field, valley.seed)
+    // the hiking trail (level 1) is kept clear: no trees, rocks or thorns on it
+    const onTrail = trailNear(valley.trail, terrain, 2.6)
+    const veg = placeVegetation(terrain, valley.field, valley.seed)
+    const clear = (list: Instance[]) => (valley.trail ? list.filter((it) => !onTrail(it.x, it.z)) : list)
+    const vegetation = { ...veg, conifers: clear(veg.conifers), broadleaves: clear(veg.broadleaves), rocks: clear(veg.rocks), bushes: clear(veg.bushes) }
     // appear where you stood on the map, or the nearest flat, safe ground
     const run = useJourney.getState().run
     const lx = (run?.x ?? center.x) - center.x
@@ -130,6 +136,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
     const at = useJourney.getState().freshSpawn ? safeSpawn(terrain, valley.field, vegetation, lx, lz) : { x: lx, z: lz }
     return {
       terrain,
+      onTrail,
       vegetation,
       berries: placeBerries(terrain, valley.field, valley.seed),
       // a tall dead tree on every summit in the world: landmarks to aim for
@@ -158,7 +165,8 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
   }, [active])
   const ground = useMemo(() => {
     const g = placeGround(world.terrain, valley.field, valley.seed, near)
-    return { conifers: [], broadleaves: [], rocks: [], bushes: g.bushes, grass: g.grass, flowers: g.flowers }
+    const keep = (list: Instance[]) => (valley.trail ? list.filter((it) => !world.onTrail(it.x, it.z)) : list)
+    return { conifers: [], broadleaves: [], rocks: [], bushes: keep(g.bushes), grass: g.grass, flowers: g.flowers }
   }, [world, valley, near])
   const decor = useMemo(() => placeDecor(world.terrain, valley.field, valley.seed, near), [world, valley, near])
 
@@ -233,7 +241,14 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
       const p = runStore.getState().playerPosition
       const above = Math.max(0, p.y - 1 - heightAt(world.terrain, p.x, p.z))
       const h = (visit.hour + ((performance.now() - visit.enteredAt) / 1000) * TIME_SCALE / 3600) % 24
+      const before = useJourney.getState().run?.found ?? []
       const lines = observe(p.x, p.z, 1.7 + above, h >= NIGHTFALL || h < DAY_START, h)
+      // turn the camera to what you just found, so you can't miss it
+      const newly = (useJourney.getState().run?.found ?? []).find((i) => !before.includes(i))
+      if (newly !== undefined) {
+        const c = valley.clues[newly]
+        runStore.getState().focus = { x: c.x - world.terrain.centerX, z: c.z - world.terrain.centerZ, pending: true }
+      }
       // berries within reach are eaten on the way
       const eaten = useJourney.getState().run?.eaten ?? []
       world.berries.forEach((b, i) => {
@@ -334,7 +349,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
     [valley, world],
   )
   const scrubAt = useCallback(
-    (x: number, z: number) => valley.field.scrub(x + world.terrain.centerX, z + world.terrain.centerZ),
+    (x: number, z: number) => valley.field.scrub(x + world.terrain.centerX, z + world.terrain.centerZ) && !world.onTrail(x, z),
     [valley, world],
   )
   const streamAt = useCallback(
@@ -434,6 +449,7 @@ export default function Scene({ valley, center, active }: { valley: Valley; cent
             <Village houses={world.houses} />
             {world.goal && valley.goal.kind !== 'village' && <GoalProp kind={valley.goal.kind} at={world.goal} />}
             <NorthStar />
+            {valley.trail && <Trail points={valley.trail} terrain={world.terrain} />}
             <BerryBushes bushes={world.berries} eaten={run?.eaten ?? []} />
             {world.summits.map((p, i) => (
               <SummitTree key={i} x={p.x} y={p.y} z={p.z} />

@@ -2,7 +2,7 @@ import { makeRng } from './rng'
 import { createWaterSample } from './rivers'
 import { heightAt, slopeAt } from './terrain'
 import { isScrub, MAX_DOWNHILL, MAX_UPHILL, type Valley } from './valley'
-import { createFog, fogAt, FOG_UNSEEN, revealAround, revealViewshed } from './viewshed'
+import { createFog, revealAround, revealViewshed } from './viewshed'
 import { CLUES, GOALS, type ClueKind } from './goals'
 
 export const DAYS_ALLOWED = 3
@@ -17,7 +17,8 @@ export const NIGHTFALL = 20 // hour walking stops
 const CHUNK_HOURS = 2
 const STEP = 15 // metres per simulation step
 const WALK_SPEED = 2 // km/h off-trail on flat open ground
-const CLUE_NEAR = 120 // metres: small clues are found only by passing this close
+const CLUE_NEAR = 20 // metres: clues are found only up close (the camera turns to them)
+const CAIRN_SIGHT = 150 // metres: a cairn on a ridge, in line of sight
 const GOAL_NEAR = 250 // metres: small goals show on the map once you pass this close
 export const HURT = 25 // health below this: slower on the map, no running in 3D
 const WADE_DEPTH = 1.2 // deeper streams (and all rivers) have to be swum: on foot, in the 3D scene
@@ -193,7 +194,7 @@ function spotClues(v: Valley, s: RunState, x: number, z: number, hour = s.hour, 
     if (def.night && !night) return // lights only show in the dark
     const d = Math.hypot(c.x - x, c.z - z)
     const close = d < (def.night && !def.far ? 80 : CLUE_NEAR)
-    const farSeen = def.far && (def.night ? d < LIGHT_RANGE && inSight(v, x, z, eye, c.x, c.z, 3) : fogAt(v.map, s.fog, c.x, c.z) !== FOG_UNSEEN)
+    const farSeen = def.far && d < (def.night ? LIGHT_RANGE : CAIRN_SIGHT) && inSight(v, x, z, eye, c.x, c.z, def.night ? 3 : 1.5)
     if (!close && !farSeen) return
     found = [...found, i]
     marks = [...marks, { kind: 'clue', x: c.x, z: c.z, label: def.name, day: s.day, hour, clue: c.kind, bearing: c.bearing }]
@@ -253,7 +254,7 @@ export function newRun(v: Valley): RunState {
     rolls: 0,
     marks: [],
     found: [],
-    log: [{ kind: 'start', message: `Day 1, 08:00. You wake up lost. ${GOALS[v.goal.kind].intro} You have ${DAYS_ALLOWED} days.` }],
+    log: [{ kind: 'start', message: `Day 1, 08:00. You wake up lost. ${v.intro ?? GOALS[v.goal.kind].intro} You have ${DAYS_ALLOWED} days.` }],
   }
 }
 

@@ -7,6 +7,10 @@ export interface LevelSpec {
   distance: [number, number]
   /** clues laid along a walkable route, start → goal; each points to the next one, the last to the goal */
   clues: ClueKind[]
+  /** a waymarked hiking trail (GR) crosses the map to the goal: its posts are the clues (replaces `clues`) */
+  trail?: boolean
+  /** journal line at the start, instead of the goal's own */
+  intro?: string
 }
 
 /** Free valleys (?seed=): the original rule, a village with smoke and no clues. */
@@ -27,8 +31,14 @@ export const LEVELS: Level[] = [
     id: 1,
     name: 'First Light',
     seed: 'bearing-01-first-light',
-    blurb: 'A quiet valley. Follow the signs of people down to the village.',
-    spec: { goal: 'village', distance: [600, 800], clues: ['track', 'signpost', 'fence'] },
+    blurb: 'A hiking trail crosses this valley. Find its red and white marks and follow them to the village.',
+    spec: {
+      goal: 'village',
+      distance: [600, 800],
+      clues: [],
+      trail: true,
+      intro: 'A long-distance hiking trail (a GR) crosses this valley down to the village. Find it, then follow its red and white marks.',
+    },
   },
   {
     id: 2,

@@ -5,6 +5,8 @@ export type ClueKind =
   | 'track' | 'signpost' | 'fence' | 'line' | 'footprints' | 'tin' | 'cairn' | 'piton' | 'blaze' | 'saw' | 'oar' | 'buoy' | 'firepit'
   // clues of light: only at night
   | 'lantern' | 'fireflies' | 'embers'
+  // a long-distance trail's posts (GR: red and white marks)
+  | 'waymark'
 
 export interface GoalDef {
   name: string
@@ -94,6 +96,7 @@ export const CLUES: Record<ClueKind, ClueDef> = {
   oar: { name: 'Lost oar', text: 'A broken oar washed into the reeds. The shore curves away {dir}.', far: false },
   buoy: { name: 'Net buoy', text: 'A faded net buoy tangled in the grass, carried here from the {dir}.', far: false },
   firepit: { name: 'Old fire', text: 'A ring of blackened stones, ash still dry under a flat rock. Footprints leave {dir}.', far: false },
+  waymark: { name: 'GR trail post', text: 'A trail post with the red and white mark of the GR. Its arrow points {dir}.', far: false },
   lantern: { name: 'Lantern', text: 'A storm lantern hangs from a branch, still burning. Someone left it to mark the way {dir}.', far: true, night: true },
   fireflies: { name: 'Fireflies', text: 'Fireflies drift low over the water, a pale trail of them following the stream {dir}.', far: false, night: true },
   embers: { name: 'Glowing embers', text: 'A red glow in the dark: embers of a fire, banked for the night. Fresh boot prints lead {dir}.', far: true, night: true },

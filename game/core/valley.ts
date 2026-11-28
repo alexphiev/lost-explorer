@@ -21,6 +21,10 @@ export interface Valley {
   village: Point
   goal: Goal
   clues: Clue[]
+  /** a waymarked hiking trail to the goal (level 1): world points every ~4 m, from the map edge to the goal */
+  trail?: Point[]
+  /** journal line at the start (level design), instead of the goal's own */
+  intro?: string
   /** named features drawn on the map once seen: summits and lakes */
   landmarks: Landmark[]
 }
@@ -131,8 +135,76 @@ export function generateValley(seed: string, spec: LevelSpec = DEFAULT_SPEC): Va
   const index = (x: number, z: number) => Math.round((z + map.size / 2) / cell) * n + Math.round((x + map.size / 2) / cell)
   const site = { field, map, ok, index }
   const goal = placeGoal(site, spec) ?? placeGoal(site, { ...spec, distance: [450, 1300] }) ?? { ...placeGoal(site, { ...DEFAULT_SPEC, distance: [450, 1300] })!, kind: spec.goal }
-  const clues = placeClues(site, seed, spec, goal, parent)
-  return { seed, field, map, start, village: { x: goal.x, z: goal.z }, goal, clues, landmarks: findLandmarks(field, map) }
+  const trail = spec.trail ? layTrail(site, goal) : undefined
+  const clues = trail ? waymarks(trail) : placeClues(site, seed, spec, goal, parent)
+  return { seed, field, map, start, village: { x: goal.x, z: goal.z }, goal, clues, trail, intro: spec.intro, landmarks: findLandmarks(field, map) }
+}
+
+/**
+ * A long-distance trail (GR) to the goal: it enters from the map edge on the far side and passes 120–400 m from the
+ * start (close enough to find, not under your feet), following walkable ground. Smoothed, resampled every 4 m.
+ */
+function layTrail(s: SiteInfo, goal: Goal): Point[] | undefined {
+  const n = s.map.segments + 1
+  const cell = s.map.size / s.map.segments
+  const gl = Math.hypot(goal.x, goal.z) || 1
+  const ux = goal.x / gl
+  const uz = goal.z / gl
+  for (const side of [180, -180, 260, -260, 360, -360, 480, -480]) {
+    const ex = Math.max(-1380, Math.min(1380, -ux * 1350 - uz * side))
+    const ez = Math.max(-1380, Math.min(1380, -uz * 1350 + ux * side))
+    const parent = new Int32Array(n * n).fill(-1)
+    const ok = reachable(s.field, s.map, { x: ex, z: ez }, parent)
+    if (!ok[s.index(goal.x, goal.z)]) continue
+    let pts: Point[] = []
+    for (let i = s.index(goal.x, goal.z); i >= 0 && pts.length < n * n; i = parent[i]) {
+      pts.push({ x: (i % n) * cell - s.map.size / 2, z: Math.floor(i / n) * cell - s.map.size / 2 })
+    }
+    pts.reverse()
+    const nearest = Math.min(...pts.map((p) => Math.hypot(p.x, p.z)))
+    if (nearest < 120 || nearest > 400) continue
+    // smooth the grid staircase (Chaikin), then resample
+    for (let pass = 0; pass < 3; pass++) {
+      const q: Point[] = [pts[0]]
+      for (let k = 0; k < pts.length - 1; k++) {
+        const a = pts[k]
+        const b = pts[k + 1]
+        q.push({ x: a.x * 0.75 + b.x * 0.25, z: a.z * 0.75 + b.z * 0.25 }, { x: a.x * 0.25 + b.x * 0.75, z: a.z * 0.25 + b.z * 0.75 })
+      }
+      q.push(pts[pts.length - 1])
+      pts = q
+    }
+    const out: Point[] = [pts[0]]
+    let carry = 0
+    for (let k = 1; k < pts.length; k++) {
+      const a = pts[k - 1]
+      const b = pts[k]
+      const len = Math.hypot(b.x - a.x, b.z - a.z)
+      let t = 4 - carry
+      while (t <= len) {
+        out.push({ x: a.x + ((b.x - a.x) * t) / len, z: a.z + ((b.z - a.z) * t) / len })
+        t += 4
+      }
+      carry = len - (t - 4)
+    }
+    out.push({ x: goal.x, z: goal.z })
+    return out
+  }
+  return undefined
+}
+
+/** A post every ~70 m along the trail, beside it, its arrow pointing on toward the goal. */
+function waymarks(trail: Point[]): Clue[] {
+  const out: Clue[] = []
+  for (let i = 4; i < trail.length - 8; i += 18) {
+    const a = trail[i]
+    const b = trail[Math.min(trail.length - 1, i + 6)]
+    const dx = b.x - a.x
+    const dz = b.z - a.z
+    const l = Math.hypot(dx, dz) || 1
+    out.push({ kind: 'waymark', x: a.x - (dz / l) * 1.8, z: a.z + (dx / l) * 1.8, bearing: ((Math.atan2(dx, -dz) * 180) / Math.PI + 360) % 360 })
+  }
+  return out
 }
 
 interface SiteInfo {

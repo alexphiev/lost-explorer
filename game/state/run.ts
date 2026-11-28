@@ -24,11 +24,13 @@ interface Run {
   injury: number
   /** What the sounds need from the player, written by the frame loop (never via setState). */
   audio: PlayerAudio
+  /** the camera turns once toward this tile-local point (a clue just found), then the player has it back */
+  focus: { x: number; z: number; pending: boolean }
   /** 1 in the dark (set by the scene once a second): falls are likelier */
   night: number
   /** performance.now() when the current 3D scene started (0 = none) */
   sceneEnteredAt: number
 }
 
-export const useRun = create<Run>(() => ({ playerPosition: { x: 0, y: 0, z: 0 }, coldLoss: 0, injury: 0, fatigue: 0, night: 0, sceneEnteredAt: 0, audio: { mode: 0, speed: 0, phase: 0, grounded: true, wade: 0, rock: false } }))
+export const useRun = create<Run>(() => ({ playerPosition: { x: 0, y: 0, z: 0 }, coldLoss: 0, injury: 0, fatigue: 0, night: 0, focus: { x: 0, z: 0, pending: false }, sceneEnteredAt: 0, audio: { mode: 0, speed: 0, phase: 0, grounded: true, wade: 0, rock: false } }))
 export const runStore = useRun

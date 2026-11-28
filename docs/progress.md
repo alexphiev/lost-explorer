@@ -118,6 +118,10 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] 5 (#39) Night clues of light: goals glow at night (village windows, cabin/hut lamp, boat lantern, cave fire: `NightGlow`, unfogged, constant on-screen size) and are pinned as "a light in the dark" when in line of sight within 1.4 km; night-only clues `lantern` and `embers` (seen from 900 m in line of sight) and `fireflies` (by a stream, up close); North Star always due north at night; levels 2 (fireflies), 5 (lantern), 6 (embers)
 - [x] 6 (#40) Levels at the new scale (first pass): goals 600–1250 m, main valley 0.5–1 km (done in task 1); berry bushes to eat (~300 per world, +20 energy, eaten on the way, pinned, saved); a tall dead tree on every summit as a landmark to aim for; night clues in levels 2, 5, 6. **Not balanced by playtest yet**: the 30-minute target needs a real run per level
 
+## Level 1: the GR trail + close-range discovery
+- [x] Clues are found only within 20 m (cairns: 150 m in line of sight, night lights unchanged); the camera swings round to face what you found (`runStore.focus`, `rotateTo`), then it is pinned on the map
+- [x] Level 1 = find the GR and follow it: a waymarked trail (`layTrail`) from the map edge to the village, passing 120–400 m from the start, smoothed, every 4 m; worn-earth strip in 3D, kept clear of trees/rocks/thorns; a post every ~70 m with the red-and-white GR mark, an arrow board pointing the way on, and boot prints leaving it; the map draws the trail (red/white) only where you have seen it up close
+
 ## Current task
 None. Redesign tasks 1–4 in PR #41, 5–6 in the follow-up PR; waiting for playtest.
 

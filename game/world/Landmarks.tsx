@@ -63,6 +63,8 @@ export function ClueProp({ kind, at }: { kind: ClueKind; at: Anchor }) {
         </>
       ) : kind === 'firepit' ? (
         <Stones ring />
+      ) : kind === 'waymark' ? (
+        <Waymark />
       ) : kind === 'embers' ? (
         <>
           <Stones ring />
@@ -418,5 +420,56 @@ export function SummitTree({ x, y, z }: { x: number; y: number; z: number }) {
       ))}
       <CylinderCollider args={[7, 0.45]} position={[0, 7, 0]} />
     </group>
+  )
+}
+
+/**
+ * A GR trail post (local +x = the way on): a wooden post with the red and white GR mark, an arrow board pointing
+ * along the trail, and a few boot prints leaving it in that direction.
+ */
+function Waymark() {
+  return (
+    <>
+      <mesh position={[0, 0.75, 0]} castShadow>
+        <boxGeometry args={[0.14, 1.5, 0.14]} />
+        <meshLambertMaterial color="#7a5a3a" />
+      </mesh>
+      {/* GR mark: white over red, on both faces */}
+      <mesh position={[0, 1.3, 0]}>
+        <boxGeometry args={[0.15, 0.06, 0.15]} />
+        <meshBasicMaterial color="#f2f2ee" />
+      </mesh>
+      <mesh position={[0, 1.22, 0]}>
+        <boxGeometry args={[0.15, 0.06, 0.15]} />
+        <meshBasicMaterial color="#c8202a" />
+      </mesh>
+      {/* arrow board pointing the way on */}
+      <group position={[0.28, 1.0, 0]}>
+        <mesh>
+          <boxGeometry args={[0.42, 0.16, 0.04]} />
+          <meshLambertMaterial color="#f2f2ee" />
+        </mesh>
+        <mesh position={[0.27, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
+          <coneGeometry args={[0.14, 0.2, 3]} />
+          <meshLambertMaterial color="#c8202a" />
+        </mesh>
+        <mesh position={[0, 0, 0.022]}>
+          <boxGeometry args={[0.3, 0.05, 0.005]} />
+          <meshBasicMaterial color="#c8202a" />
+        </mesh>
+        <mesh position={[0, 0, -0.022]}>
+          <boxGeometry args={[0.3, 0.05, 0.005]} />
+          <meshBasicMaterial color="#c8202a" />
+        </mesh>
+      </group>
+      {/* boot prints leaving the post */}
+      {[0, 1, 2, 3, 4, 5].map((k) => (
+        <mesh key={k} position={[0.9 + k * 0.62, 0.035, k % 2 ? 0.14 : -0.14]} rotation={[-Math.PI / 2, 0, -Math.PI / 2]}>
+          <circleGeometry args={[0.1, 8]} />
+          <meshBasicMaterial color="#4a3a28" transparent opacity={0.55} />
+        </mesh>
+      ))}
+      <CylinderCollider args={[0.75, 0.1]} position={[0, 0.75, 0]} />
+    </>
   )
 }
