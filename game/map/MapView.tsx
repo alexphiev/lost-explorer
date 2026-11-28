@@ -4,7 +4,7 @@ import { useClock, useJourney } from '@/game/state/journey'
 import { DAYS_ALLOWED, HURT, bearingTo, compassName, formatHour } from '@/game/core/travel'
 import { levelById, LEVELS } from '@/game/core/levels'
 import { MAP_SIZE } from '@/game/core/valley'
-import { FOG_NEAR, FOG_UNSEEN, fogAt } from '@/game/core/viewshed'
+import { FOG_UNSEEN, fogAt } from '@/game/core/viewshed'
 import { GOALS } from '@/game/core/goals'
 import { randomSeed } from '@/game/core/rng'
 import { formatDuration } from '@/game/state/save'
@@ -111,25 +111,6 @@ export default function MapView() {
 
     // landmarks you have seen
     for (const l of valley.landmarks) if (fogAt(valley.map, run.fog, l.x, l.z) !== FOG_UNSEEN) pin(l.kind, l.x, l.z, l.label)
-
-    // the GR trail, only where you have seen it up close: red and white, like its marks
-    if (valley.trail) {
-      for (const [col, w, dash] of [['#f4f1e8', 4, [] as number[]], ['#c8202a', 2, [5, 4]]] as const) {
-        ctx.strokeStyle = col
-        ctx.lineWidth = w
-        ctx.setLineDash(dash as number[])
-        ctx.beginPath()
-        let drawing = false
-        for (const p of valley.trail) {
-          const seen = fogAt(valley.map, run.fog, p.x, p.z) === FOG_NEAR
-          if (seen && drawing) ctx.lineTo(sx(p.x), sz(p.z))
-          else if (seen) ctx.moveTo(sx(p.x), sz(p.z))
-          drawing = seen
-        }
-        ctx.stroke()
-      }
-      ctx.setLineDash([])
-    }
 
     // walked path
     ctx.strokeStyle = '#7a1f1f'

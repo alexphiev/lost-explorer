@@ -1257,12 +1257,6 @@ export default function Player({
 
     // ================= camera =================
     cam.current?.moveTo(P.x, P.y + 0.6, P.z, true)
-    // a clue was just found: swing the camera round so it is in front of you (camera behind, looking at it)
-    const focus = run.focus
-    if (focus.pending && cam.current) {
-      focus.pending = false
-      cam.current.rotateTo(Math.atan2(P.x - focus.x, P.z - focus.z), 1.15, true)
-    }
     const c = st.camera as THREE.PerspectiveCamera
     const tx = P.x
     const ty = P.y + 0.6

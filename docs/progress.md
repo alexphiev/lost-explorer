@@ -119,8 +119,8 @@ Branches: `step-1`, `step-1.5` (#2), `step-2` (#3) merged; `step-3` (#4) merged;
 - [x] 6 (#40) Levels at the new scale (first pass): goals 600–1250 m, main valley 0.5–1 km (done in task 1); berry bushes to eat (~300 per world, +20 energy, eaten on the way, pinned, saved); a tall dead tree on every summit as a landmark to aim for; night clues in levels 2, 5, 6. **Not balanced by playtest yet**: the 30-minute target needs a real run per level
 
 ## Level 1: the GR trail + close-range discovery
-- [x] Clues are found only within 20 m (cairns: 150 m in line of sight, night lights unchanged); the camera swings round to face what you found (`runStore.focus`, `rotateTo`), then it is pinned on the map
-- [x] Level 1 = find the GR and follow it: a waymarked trail (`layTrail`) from the map edge to the village, passing 120–400 m from the start, smoothed, every 4 m; worn-earth strip in 3D, kept clear of trees/rocks/thorns; a post every ~70 m with the red-and-white GR mark, an arrow board pointing the way on, and boot prints leaving it; the map draws the trail (red/white) only where you have seen it up close
+- [x] Clues are found only within 20 m (cairns: 150 m in line of sight, night lights unchanged), then pinned on the map; no camera help: the player spots them by themselves (user's call)
+- [x] Level 1 = find the GR and follow it: an invisible route (`layTrail`) from the map edge to the village, passing 120–400 m from the start; only its posts show, one every ~70 m, with the red-and-white GR mark, an arrow board pointing the way on, and boot prints leaving it (no drawn path, in 3D or on the map: user's call)
 
 ## Current task
 None. Redesign tasks 1–4 in PR #41, 5–6 in the follow-up PR; waiting for playtest.
