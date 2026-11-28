@@ -1,6 +1,7 @@
 'use client'
 import { CuboidCollider, RigidBody } from '@react-three/rapier'
 import type { Instance } from '@/game/core/placement'
+import { NightGlow } from './Landmarks'
 
 const WALLS = ['#e8dcc4', '#d9c6a3', '#efe6d2', '#cdb68f']
 const ROOFS = ['#9c4a32', '#7d3b2a', '#8a5a3c']
@@ -29,6 +30,8 @@ export default function Village({ houses }: { houses: Instance[] }) {
               <meshLambertMaterial color="#6e6258" flatShading />
             </mesh>
             <CuboidCollider args={[w / 2, ht / 2 + 1, d / 2]} position={[0, ht / 2, 0]} />
+            {/* lit windows at night */}
+            <NightGlow position={[w * 0.2, ht * 0.55, d / 2 + 0.05]} size={0.2} light={i % 2 ? 0 : 6} />
           </group>
         )
       })}

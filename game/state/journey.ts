@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { runStore } from './run'
-import { campRest, checkEnd, climb, explore, hoursUsed, LIMIT_HOURS, makeCamp, newRun, observe, TIME_SCALE, type RunState } from '@/game/core/travel'
+import { BERRY_ENERGY, eatBerries, campRest, checkEnd, climb, explore, hoursUsed, LIMIT_HOURS, makeCamp, newRun, observe, TIME_SCALE, type RunState } from '@/game/core/travel'
 import { generateValley, type Point, type Valley } from '@/game/core/valley'
 import type { Best, SavedRun } from './save'
 import { levelById } from '@/game/core/levels'
@@ -37,6 +37,8 @@ interface Journey {
   setBearing: (b: number) => void
   climb: () => void
   enterScene: () => void
+  /** Ate berry bush `i` at tile-local (x, z) (+energy goes through runStore.fatigue). */
+  eat: (i: number, localX: number, localZ: number) => void
   /** At the camp, on foot: settle what the scene spent so far, then rest an hour or sleep until dawn. */
   campRest: (localX: number, localZ: number, seconds: number, sleep: boolean) => void
   /** Pitch (spot given) or pack up (null) the camp at tile-local (x, z). */
@@ -57,7 +59,7 @@ function settleScene(valley: Valley, run: RunState, center: Point, localX: numbe
   // effort and cold spent energy, falls and the cold of the night hurt (all accumulated by the scene)
   const r = runStore.getState()
   const spent = r.coldLoss + r.fatigue
-  if (spent > 0) next = { ...next, energy: Math.max(0, next.energy - spent) }
+  if (spent !== 0) next = { ...next, energy: Math.min(100, Math.max(0, next.energy - spent)) }
   if (r.injury > 0) next = { ...next, health: Math.max(0, next.health - r.injury) }
   return checkEnd(next)
 }
@@ -127,6 +129,12 @@ export const useJourney = create<Journey>((set, get) => ({
     if (!spot) return set({ run: { ...run, camp: null } })
     const camp = { x: sceneCenter.x + spot.x, z: sceneCenter.z + spot.z, quality: spot.quality, fire: spot.fire }
     set({ run: makeCamp(run, camp, spot.verdict) })
+  },
+  eat: (i, localX, localZ) => {
+    const { run, sceneCenter } = get()
+    if (!run || !sceneCenter || run.eaten?.includes(i)) return
+    runStore.getState().fatigue -= BERRY_ENERGY
+    set({ run: eatBerries(run, i, sceneCenter.x + localX, sceneCenter.z + localZ) })
   },
   enterScene: () => {
     const { run } = get()

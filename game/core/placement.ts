@@ -264,3 +264,8 @@ export function safeSpawn(t: Terrain, field: HeightField, veg: Vegetation, x0: n
   }
   return { x: x0, z: z0 }
 }
+
+/** Berry bushes to eat (energy): a few per 250 m chunk on gentle ground below the high slopes, the same every visit. */
+export function placeBerries(t: Terrain, field: HeightField, seed: string): Instance[] {
+  return scatter(t, field.water, seed, 'berries', 6, (s) => (s.slope > 0.35 || s.h > 0.75 ? 0 : 0.7), 0.9, 1.2, 12)
+}

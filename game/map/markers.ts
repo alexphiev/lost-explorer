@@ -16,6 +16,7 @@ export const MARKER_NAME: Record<MarkerKind, string> = {
   water: 'Deep water',
   village: 'Village',
   clue: 'Clue',
+  light: 'A light at night',
   cabin: 'Cabin',
   boat: 'Boat',
   cave: 'Cave',
@@ -187,6 +188,21 @@ export function drawMarker(ctx: CanvasRenderingContext2D, kind: MarkerKind, x: n
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText('?', 0, 0.5)
+      break
+    }
+    case 'light': {
+      // a glowing point with rays
+      ctx.fillStyle = 'rgba(255, 200, 80, 0.35)'
+      ctx.beginPath()
+      ctx.arc(0, 0, 9, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#ffcf4a'
+      ctx.beginPath()
+      ctx.arc(0, 0, 4, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = '#b07a12'
+      ctx.lineWidth = 1.2
+      ctx.stroke()
       break
     }
     case 'cabin':

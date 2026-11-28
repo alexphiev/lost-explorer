@@ -35,7 +35,7 @@ export const LEVELS: Level[] = [
     name: 'Cold Water',
     seed: 'bearing-02-cold-water',
     blurb: 'Streams everywhere. Somewhere on the big river, a fisherman left his boat.',
-    spec: { goal: 'boat', distance: [700, 900], clues: ['tin', 'footprints', 'line'] },
+    spec: { goal: 'boat', distance: [700, 900], clues: ['tin', 'fireflies', 'line'] },
   },
   {
     id: 3,
@@ -55,15 +55,15 @@ export const LEVELS: Level[] = [
     id: 5,
     name: 'Long Lakes',
     seed: 'bearing-05-long-lakes',
-    blurb: 'The water decides your path. Someone fishes from one of these shores.',
-    spec: { goal: 'hut', distance: [900, 1150], clues: ['buoy', 'oar'] },
+    blurb: 'The water decides your path. At night, a lantern shows the way to the fisherman.',
+    spec: { goal: 'hut', distance: [900, 1150], clues: ['buoy', 'lantern', 'oar'] },
   },
   {
     id: 6,
     name: 'Last Smoke',
     seed: 'bearing-06-last-smoke',
-    blurb: 'Far, and almost nothing to go on. Three days, no room for mistakes.',
-    spec: { goal: 'village', distance: [1000, 1250], clues: ['firepit'] },
+    blurb: 'Far, and almost nothing to go on by day. Watch the dark for a glow.',
+    spec: { goal: 'village', distance: [1000, 1250], clues: ['firepit', 'embers'] },
   },
 ]
 

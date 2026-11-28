@@ -51,7 +51,7 @@ export interface Stop {
 }
 
 /** A point of interest the player has discovered, pinned on the map. */
-export type MarkKind = 'camp' | 'view' | 'berries' | 'smoke' | 'cliff' | 'scrub' | 'water' | 'village' | 'clue'
+export type MarkKind = 'camp' | 'view' | 'berries' | 'smoke' | 'cliff' | 'scrub' | 'water' | 'village' | 'clue' | 'light'
 export interface Mark {
   kind: MarkKind
   x: number
@@ -75,6 +75,7 @@ const MARK_LABEL: Record<MarkKind, string> = {
   water: 'Deep water',
   village: 'Village',
   clue: 'Clue',
+  light: 'A light in the dark',
 }
 
 /** Pin a mark, unless one of the same kind is already close by. */
@@ -107,6 +108,10 @@ export interface RunState {
   found: number[]
   /** passed close to a small goal (cabin, boat…): it shows on the map */
   goalSeen?: boolean
+  /** berry bushes already eaten (indices into the scene's berry list) */
+  eaten?: number[]
+  /** saw the goal's light at night */
+  lightSeen?: boolean
   /** the camp you set up (world position), until you pack it up */
   camp?: Camp | null
 }
@@ -178,22 +183,51 @@ function withStop(s: RunState, stop: Stop): { state: RunState; stop: Stop } {
  * What you come across standing at (x, z): small clues within CLUE_NEAR, cairns as soon as they are on the map,
  * and a small goal within GOAL_NEAR. Returns the state with them pinned (unchanged object if nothing new) and the journal lines.
  */
-function spotClues(v: Valley, s: RunState, x: number, z: number, hour = s.hour): { state: RunState; lines: string[] } {
+function spotClues(v: Valley, s: RunState, x: number, z: number, hour = s.hour, night = false, eye = 1.7): { state: RunState; lines: string[] } {
   const lines: string[] = []
   let found = s.found ?? []
   let marks = s.marks ?? []
   v.clues.forEach((c, i) => {
     if (found.includes(i)) return
     const def = CLUES[c.kind]
-    const close = Math.hypot(c.x - x, c.z - z) < CLUE_NEAR
-    if (!close && !(def.far && fogAt(v.map, s.fog, c.x, c.z) !== FOG_UNSEEN)) return
+    if (def.night && !night) return // lights only show in the dark
+    const d = Math.hypot(c.x - x, c.z - z)
+    const close = d < (def.night && !def.far ? 80 : CLUE_NEAR)
+    const farSeen = def.far && (def.night ? d < LIGHT_RANGE && inSight(v, x, z, eye, c.x, c.z, 3) : fogAt(v.map, s.fog, c.x, c.z) !== FOG_UNSEEN)
+    if (!close && !farSeen) return
     found = [...found, i]
     marks = [...marks, { kind: 'clue', x: c.x, z: c.z, label: def.name, day: s.day, hour, clue: c.kind, bearing: c.bearing }]
     lines.push(def.text.replace('{dir}', compassName(c.bearing)))
   })
   const goalSeen = s.goalSeen || Math.hypot(v.goal.x - x, v.goal.z - z) < GOAL_NEAR
+  // the goal is lit at night: seen from far, in line of sight
+  let lightSeen = !!s.lightSeen
+  if (night && !lightSeen) {
+    const d = Math.hypot(v.goal.x - x, v.goal.z - z)
+    if (d < GOAL_LIGHT_RANGE && inSight(v, x, z, eye, v.goal.x, v.goal.z, 4)) {
+      lightSeen = true
+      marks = [...marks, { kind: 'light', x: v.goal.x, z: v.goal.z, label: 'A light in the dark', day: s.day, hour }]
+      lines.push(`Far to the ${compassName(bearingTo(x, z, v.goal.x, v.goal.z))}, a light in the dark: ${GOALS[v.goal.kind].light}.`)
+    }
+  }
   if (!lines.length && goalSeen === !!s.goalSeen) return { state: s, lines }
-  return { state: { ...s, found, marks, goalSeen }, lines }
+  return { state: { ...s, found, marks, goalSeen, lightSeen }, lines }
+}
+
+const LIGHT_RANGE = 900 // metres: a lantern or embers in the dark
+const GOAL_LIGHT_RANGE = 1400 // metres: lit windows, a lamp, a fire
+
+/** Line of sight over the map's terrain from an eye at (ax, az) to a point `bh` metres above the ground at (bx, bz). */
+function inSight(v: Valley, ax: number, az: number, eye: number, bx: number, bz: number, bh: number): boolean {
+  const a = heightAt(v.map, ax, az) + eye
+  const b = heightAt(v.map, bx, bz) + bh
+  const d = Math.hypot(bx - ax, bz - az)
+  const steps = Math.ceil(d / 15)
+  for (let k = 1; k < steps; k++) {
+    const t = k / steps
+    if (heightAt(v.map, ax + (bx - ax) * t, az + (bz - az) * t) > a + (b - a) * t + 0.5) return false
+  }
+  return true
 }
 
 const goalReach = (v: Valley) => GOALS[v.goal.kind].reach
@@ -470,8 +504,20 @@ export function observe(v: Valley, s: RunState, x: number, z: number, eye: numbe
   // the trail on the map: a point every ~20 m
   const n = s.path.length
   if (n < 2 || Math.hypot(x - s.path[n - 2], z - s.path[n - 1]) > 20) s.path.push(x, z)
-  const spotted = spotClues(v, s, x, z, hour)
+  const spotted = spotClues(v, s, x, z, hour, night, eye)
   if (!spotted.lines.length) return { state: spotted.state === s ? s : spotted.state, lines: [] }
   const stop: Stop = { kind: 'clue', message: spotted.lines.join(' ') }
   return { state: { ...spotted.state, log: [...spotted.state.log, stop] }, lines: spotted.lines }
+}
+
+export const BERRY_ENERGY = 20
+
+/** Ate the berries of bush `i` at world (x, z): pin it, note it (the energy itself goes through the scene). */
+export function eatBerries(s: RunState, i: number, x: number, z: number): RunState {
+  return {
+    ...s,
+    eaten: [...(s.eaten ?? []), i],
+    marks: addMark(s, 'berries', x, z),
+    log: [...s.log, { kind: 'berries', message: `You find a bush heavy with berries. +${BERRY_ENERGY} energy.` }],
+  }
 }
