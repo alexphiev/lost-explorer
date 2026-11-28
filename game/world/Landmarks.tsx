@@ -437,11 +437,11 @@ function Waymark() {
       {/* GR mark: white over red, on both faces */}
       <mesh position={[0, 1.3, 0]}>
         <boxGeometry args={[0.15, 0.06, 0.15]} />
-        <meshBasicMaterial color="#f2f2ee" />
+        <meshLambertMaterial color="#f2f2ee" />
       </mesh>
       <mesh position={[0, 1.22, 0]}>
         <boxGeometry args={[0.15, 0.06, 0.15]} />
-        <meshBasicMaterial color="#c8202a" />
+        <meshLambertMaterial color="#c8202a" />
       </mesh>
       {/* arrow board pointing the way on */}
       <group position={[0.28, 1.0, 0]}>
@@ -455,18 +455,18 @@ function Waymark() {
         </mesh>
         <mesh position={[0, 0, 0.022]}>
           <boxGeometry args={[0.3, 0.05, 0.005]} />
-          <meshBasicMaterial color="#c8202a" />
+          <meshLambertMaterial color="#c8202a" />
         </mesh>
         <mesh position={[0, 0, -0.022]}>
           <boxGeometry args={[0.3, 0.05, 0.005]} />
-          <meshBasicMaterial color="#c8202a" />
+          <meshLambertMaterial color="#c8202a" />
         </mesh>
       </group>
       {/* boot prints leaving the post */}
       {[0, 1, 2, 3, 4, 5].map((k) => (
         <mesh key={k} position={[0.9 + k * 0.62, 0.035, k % 2 ? 0.14 : -0.14]} rotation={[-Math.PI / 2, 0, -Math.PI / 2]}>
           <circleGeometry args={[0.1, 8]} />
-          <meshBasicMaterial color="#4a3a28" transparent opacity={0.55} />
+          <meshLambertMaterial color="#4a3a28" transparent opacity={0.55} />
         </mesh>
       ))}
       <CylinderCollider args={[0.75, 0.1]} position={[0, 0.75, 0]} />
